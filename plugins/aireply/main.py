@@ -41,6 +41,7 @@ class AiReply(BasePlugin):
         插件加载时的初始化逻辑
         """
         self.context_manager = OpenAIContextManager()  # 初始化上下文管理器
+        await self.context_manager._initialize_database()  # 确保表已创建
         self.bot_name = self.context_manager.bot_name
         print(f"{self.name} 插件已加载")
         print(f"插件版本: {self.version}")

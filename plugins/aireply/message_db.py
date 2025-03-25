@@ -1,5 +1,5 @@
 import os
-import sqlite3
+import aiosqlite
 import aiohttp
 import yaml
 from ncatbot.utils.logger import get_log
@@ -13,7 +13,22 @@ class OpenAIContextManager:
         """
         self.db_path = db_path
         self.api_key, self.proxy, self.bot_name = self.load_config()  # 加载 bot_name
-        self._initialize_database()
+
+    async def _initialize_database(self):
+        """
+        初始化数据库，创建 ai_txt 表
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ai_txt (
+                        group_id TEXT PRIMARY KEY NOT NULL,
+                        context TEXT NOT NULL
+                    )
+                """)
+                await conn.commit()
+        except Exception as e:
+            _log.error(f"初始化数据库时出错: {e}")
 
     def load_config(self):
         """
@@ -33,52 +48,40 @@ class OpenAIContextManager:
             _log.error(f"加载配置文件时出错: {e}")
         return "", None, "机器人"
 
-    def _initialize_database(self):
-        """
-        初始化数据库，创建 ai_txt 表
-        """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS ai_txt (
-                    group_id TEXT PRIMARY KEY NOT NULL,
-                    context TEXT NOT NULL
-                )
-            """)
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            _log.error(f"初始化数据库时出错: {e}")
-
-    def get_context(self, group_id):
+    async def get_context(self, group_id):
         """
         获取指定群号的上下文内容
         """
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT context FROM ai_txt WHERE group_id = ?", (group_id,))
-            result = cursor.fetchone()
-            conn.close()
-            return result[0] if result else ""
+            async with aiosqlite.connect(self.db_path) as conn:
+                async with conn.execute("SELECT context FROM ai_txt WHERE group_id = ?", (group_id,)) as cursor:
+                    result = await cursor.fetchone()
+                    return result[0] if result else ""
         except Exception as e:
             _log.error(f"获取上下文时出错: {e}")
             return ""
-
-    def save_context(self, group_id, context):
+    async def clear_context(self, group_id):
+        """
+        清空指定群号的上下文内容
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute("DELETE FROM ai_txt WHERE group_id = ?", (group_id,))
+                await conn.commit()
+                _log.info(f"已清空群号 {group_id} 的上下文")
+        except Exception as e:
+            _log.error(f"清空上下文时出错: {e}")
+    async def save_context(self, group_id, context):
         """
         保存或更新指定群号的上下文内容
         """
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO ai_txt (group_id, context) VALUES (?, ?)
-                ON CONFLICT(group_id) DO UPDATE SET context = excluded.context
-            """, (group_id, context))
-            conn.commit()
-            conn.close()
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute("""
+                    INSERT INTO ai_txt (group_id, context) VALUES (?, ?)
+                    ON CONFLICT(group_id) DO UPDATE SET context = excluded.context
+                """, (group_id, context))
+                await conn.commit()
         except Exception as e:
             _log.error(f"保存上下文时出错: {e}")
 
@@ -91,7 +94,7 @@ class OpenAIContextManager:
             return "抱歉，API 密钥未正确配置，无法处理您的请求。"
 
         # 获取当前上下文
-        context = self.get_context(group_id)
+        context = await self.get_context(group_id)
         messages = [{"role": "system", "content": "你是一个智能助手。"}]
         if context:
             messages.append({"role": "assistant", "content": context})
@@ -116,7 +119,7 @@ class OpenAIContextManager:
                         reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                         # 更新上下文
                         new_context = f"{context}\nUser: {prompt}\nAssistant: {reply}"
-                        self.save_context(group_id, new_context)
+                        await self.save_context(group_id, new_context)
                         return reply
                     else:
                         _log.error(f"请求失败，状态码: {resp.status}, 响应内容: {await resp.text()}")

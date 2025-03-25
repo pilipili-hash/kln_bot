@@ -1,20 +1,18 @@
-import sqlite3
+import aiosqlite
 import json
 import tempfile
 import os
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-def load_menu_data(group_id, db_path="data.db"):
+async def load_menu_data(group_id, db_path="data.db"):
     """从数据库中加载菜单数据"""
     try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-        SELECT menu_item FROM group_menus WHERE group_id = ?
-        """, (group_id,))
-        result = cursor.fetchone()
-        conn.close()
+        async with aiosqlite.connect(db_path) as conn:
+            async with conn.execute("""
+            SELECT menu_item FROM group_menus WHERE group_id = ?
+            """, (group_id,)) as cursor:
+                result = await cursor.fetchone()
 
         if result:
             # 将 JSON 文本解析为 Python 对象
@@ -22,12 +20,59 @@ def load_menu_data(group_id, db_path="data.db"):
         else:
             print(f"群号 {group_id} 的菜单数据不存在")
             return None
-    except sqlite3.Error as e:
+    except aiosqlite.Error as e:
         print(f"数据库操作失败: {e}")
         return None
     except json.JSONDecodeError:
         print(f"群号 {group_id} 的菜单数据格式错误")
         return None
+
+
+async def update_menu_from_file(group_id):
+    """从 static/menu.json 文件读取菜单数据并与数据库中的数据合并"""
+    menu_file = os.path.join("static", "menu.json")
+    if not os.path.exists(menu_file):
+        print(f"菜单文件 '{menu_file}' 不存在")
+        return False
+
+    try:
+        # 读取 menu.json 文件中的数据
+        with open(menu_file, "r", encoding="utf-8") as file:
+            new_menu_data = json.load(file)
+
+        # 从数据库中加载现有菜单数据
+        db_path = "data.db"
+        async with aiosqlite.connect(db_path) as conn:
+            async with conn.execute("""
+            SELECT menu_item FROM group_menus WHERE group_id = ?
+            """, (group_id,)) as cursor:
+                result = await cursor.fetchone()
+
+            if result:
+                # 将现有数据解析为 Python 对象
+                existing_menu_data = json.loads(result[0])
+                # 合并新数据和现有数据
+                merged_menu_data = merge_menu_data(existing_menu_data, new_menu_data)
+            else:
+                # 如果数据库中没有数据，直接使用新数据
+                merged_menu_data = new_menu_data
+
+            # 将合并后的数据写回数据库
+            await conn.execute("""
+            INSERT OR REPLACE INTO group_menus (group_id, menu_item)
+            VALUES (?, ?)
+            """, (group_id, json.dumps(merged_menu_data, ensure_ascii=False)))
+
+            await conn.commit()
+        print(f"群号 {group_id} 的菜单已更新并合并")
+        return True
+    except FileNotFoundError:
+        print(f"菜单文件 '{menu_file}' 未找到")
+    except json.JSONDecodeError:
+        print(f"菜单文件 '{menu_file}' 格式错误")
+    except aiosqlite.Error as e:
+        print(f"数据库操作失败: {e}")
+    return False
 
 
 def extract_members(menu_data):
@@ -202,53 +247,6 @@ def truncate_text(text: str, font: ImageFont.ImageFont, max_width: int) -> str:
 
     return truncated_text + ellipsis
 
-def update_menu_from_file(group_id):
-    """从 static/menu.json 文件读取菜单数据并与数据库中的数据合并"""
-    menu_file = os.path.join("static", "menu.json")
-    if not os.path.exists(menu_file):
-        print(f"菜单文件 '{menu_file}' 不存在")
-        return False
-
-    try:
-        # 读取 menu.json 文件中的数据
-        with open(menu_file, "r", encoding="utf-8") as file:
-            new_menu_data = json.load(file)
-
-        # 从数据库中加载现有菜单数据
-        db_path = "data.db"
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-        SELECT menu_item FROM group_menus WHERE group_id = ?
-        """, (group_id,))
-        result = cursor.fetchone()
-
-        if result:
-            # 将现有数据解析为 Python 对象
-            existing_menu_data = json.loads(result[0])
-            # 合并新数据和现有数据
-            merged_menu_data = merge_menu_data(existing_menu_data, new_menu_data)
-        else:
-            # 如果数据库中没有数据，直接使用新数据
-            merged_menu_data = new_menu_data
-
-        # 将合并后的数据写回数据库
-        cursor.execute("""
-        INSERT OR REPLACE INTO group_menus (group_id, menu_item)
-        VALUES (?, ?)
-        """, (group_id, json.dumps(merged_menu_data, ensure_ascii=False)))
-
-        conn.commit()
-        conn.close()
-        print(f"群号 {group_id} 的菜单已更新并合并")
-        return True
-    except FileNotFoundError:
-        print(f"菜单文件 '{menu_file}' 未找到")
-    except json.JSONDecodeError:
-        print(f"菜单文件 '{menu_file}' 格式错误")
-    except sqlite3.Error as e:
-        print(f"数据库操作失败: {e}")
-    return False
 def merge_menu_data(existing_menu_data, new_menu_data):
     """合并现有菜单数据和新菜单数据"""
     if "info" in existing_menu_data and "info" in new_menu_data:
