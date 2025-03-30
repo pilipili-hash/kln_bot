@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage, PrivateMessage
+from PluginManager.plugin_manager import feature_required
 from utils.group_forward_msg import send_group_forward_msg_ws,cq_img
 from ncatbot.core.element import (
     MessageChain,  # 消息链，用于组合多个消息元素
@@ -84,6 +85,7 @@ class TodayAnime(BasePlugin):
                 content=messages
             )
     @bot.group_event()
+    @feature_required("今日番剧")
     async def handle_group_message(self, event: GroupMessage):
         if event.raw_message == "今日番剧":
             data = await self.fetch_today_anime()

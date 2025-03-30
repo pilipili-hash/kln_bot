@@ -4,6 +4,9 @@ import tempfile
 import os
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from ncatbot.utils.logger import get_log
+
+_log = get_log()
 
 async def load_menu_data(group_id, db_path="data.db"):
     """从数据库中加载菜单数据"""
@@ -18,13 +21,13 @@ async def load_menu_data(group_id, db_path="data.db"):
             # 将 JSON 文本解析为 Python 对象
             return json.loads(result[0])
         else:
-            print(f"群号 {group_id} 的菜单数据不存在")
+            _log.info(f"群号 {group_id} 的菜单数据不存在")
             return None
     except aiosqlite.Error as e:
-        print(f"数据库操作失败: {e}")
+        _log.info(f"数据库操作失败: {e}")
         return None
     except json.JSONDecodeError:
-        print(f"群号 {group_id} 的菜单数据格式错误")
+        _log.info(f"群号 {group_id} 的菜单数据格式错误")
         return None
 
 
@@ -32,7 +35,7 @@ async def update_menu_from_file(group_id):
     """从 static/menu.json 文件读取菜单数据并与数据库中的数据合并"""
     menu_file = os.path.join("static", "menu.json")
     if not os.path.exists(menu_file):
-        print(f"菜单文件 '{menu_file}' 不存在")
+        _log.info(f"菜单文件 '{menu_file}' 不存在")
         return False
 
     try:
@@ -64,14 +67,14 @@ async def update_menu_from_file(group_id):
             """, (group_id, json.dumps(merged_menu_data, ensure_ascii=False)))
 
             await conn.commit()
-        print(f"群号 {group_id} 的菜单已更新并合并")
+        _log.info(f"群号 {group_id} 的菜单已更新并合并")
         return True
     except FileNotFoundError:
-        print(f"菜单文件 '{menu_file}' 未找到")
+        _log.info(f"菜单文件 '{menu_file}' 未找到")
     except json.JSONDecodeError:
-        print(f"菜单文件 '{menu_file}' 格式错误")
+        _log.info(f"菜单文件 '{menu_file}' 格式错误")
     except aiosqlite.Error as e:
-        print(f"数据库操作失败: {e}")
+        _log.info(f"数据库操作失败: {e}")
     return False
 
 
@@ -99,7 +102,7 @@ def generate_temp_image(members):
             temp_file.write(image_data.getvalue())
             return temp_file.name
     except Exception as e:
-        print(f"生成图片失败: {e}")
+        _log.info(f"生成图片失败: {e}")
         return None
 
 
