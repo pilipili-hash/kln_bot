@@ -1,7 +1,7 @@
 import os
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage
-from aireply.message_db import OpenAIContextManager  # 导入上下文管理器
+from AiReply.message_db import OpenAIContextManager  # 导入上下文管理器
 import time
 
 bot = CompatibleEnrollment  # 兼容回调函数注册器
