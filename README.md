@@ -4,7 +4,7 @@
 
 ​	大致功能正在做有这些:
 
-![menu](https://b.bdstatic.com/comment/_ni7b9SxZshF3OHnSAPzjA063fc15beee3d6f69059e6e7581bd772.png)
+![menu](/img/menu.png)
 
 这是之前做的机器人迁移过来的,所以基本的想法是参照以前的机器人。
 
