@@ -5,7 +5,7 @@ import yaml
 import os
 import aiofiles
 from ncatbot.utils.logger import get_log
-
+import re
 _log = get_log()
 
 async def load_yaml_file(file_path, default=None):
@@ -73,26 +73,35 @@ async def is_feature_enabled(group_id, title):
             _log.info(f"解析 JSON 数据出错: {e}")
     return False
 
-def feature_required(title):
+def feature_required(feature_name, raw_message_filter=None):
     """
-    装饰器：检查功能是否开启。
-    如果功能未开启，则在函数内部返回提示消息。
+    装饰器：检查功能是否开启，并根据指令触发条件执行功能。
+    :param feature_name: 功能名称，用于检查功能是否开启。
+    :param raw_message_filter: 指令触发条件，可以是字符串或正则表达式。
     """
     def decorator(func):
         @wraps(func)
         async def wrapper(self, event, *args, **kwargs):
-            # 检查是否需要执行功能检查
-            if event.raw_message == title:  # 仅在匹配消息时检查功能
-                group_id = getattr(event, "group_id", None) or getattr(event, "user_id", None)
-                if not await is_feature_enabled(group_id, title):
-                    # 如果功能未开启，发送提示消息并终止执行
-                    message = f"功能 '{title}' 未开启"
-                    if hasattr(event, "group_id"):
-                        await self.api.post_group_msg(event.group_id, text=message)
-                    elif hasattr(event, "user_id"):
-                        await self.api.post_private_msg(event.user_id, text=message)
-                    return
-            # 功能已开启或不需要检查，继续执行原函数
+            group_id = getattr(event, "group_id", None)
+            raw_message = getattr(event, "raw_message", "").strip()
+
+            # 检查指令是否匹配
+            if raw_message_filter:
+                if isinstance(raw_message_filter, str):
+                    # 字符串匹配
+                    if not raw_message.startswith(raw_message_filter):
+                        return await func(self, event, *args, **kwargs)
+                elif isinstance(raw_message_filter, re.Pattern):
+                    # 正则匹配
+                    if not raw_message_filter.match(raw_message):
+                        return await func(self, event, *args, **kwargs)
+
+            # 检查功能是否开启
+            if not await is_feature_enabled(group_id, feature_name):
+                await self.api.post_group_msg(group_id, text=f"功能 '{feature_name}' 未开启")
+                return
+
+            # 功能已开启，继续执行原函数
             return await func(self, event, *args, **kwargs)
         return wrapper
     return decorator

@@ -2,8 +2,7 @@ from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.utils.config import config
 from .pokeData import init_db, add_poke_reply, get_random_poke_reply, get_all_poke_replies, generate_replies_image,delete_poke_reply
 from ncatbot.core.message import GroupMessage
-from utils.group_forward_msg import send_group_forward_msg_cq
-from PIL import Image, ImageDraw, ImageFont  # 添加依赖
+from utils.group_forward_msg import send_group_forward_msg_cq # 添加依赖
 import os
 bot = CompatibleEnrollment
 

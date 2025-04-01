@@ -197,15 +197,25 @@ def generate_image(data: list) -> BytesIO:
             content = item.get("content", "未定义内容")
             status = item.get("status", 0)
 
-            # 绘制序号
+            # 绘制序号和标题（带描边）
             text_x = box_x1 + 80  # 留出图标空间
             text_y = box_y1 + 20
-            draw.text((text_x, text_y), f"{index + 1}:{title}", fill=(0, 0, 0), font=font)
+            for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:  # 黑色描边
+                draw.text((text_x + offset[0], text_y + offset[1]), f"{index + 1}:{title}", fill=(0, 0, 0), font=font)
+
+            # 绘制文字本体（白色）
+            draw.text((text_x, text_y), f"{index + 1}:{title}", fill=(255, 255, 255), font=font)
 
             # 绘制内容，超出边框显示省略号
             max_content_width = box_width - 200  # 内容最大宽度
             content = truncate_text(content, font, max_content_width)
-            draw.text((text_x, text_y + 40), f"内容: {content}", fill=(50, 50, 50), font=font)
+
+            # 绘制内容文字描边（黑色）
+            for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+                draw.text((text_x + offset[0], text_y + 40 + offset[1]), f"内容: {content}", fill=(0, 0, 0), font=font)
+
+            # 绘制内容文字本体（白色）
+            draw.text((text_x, text_y + 40), f"内容: {content}", fill=(255, 255, 255), font=font)
 
             # 绘制状态图标
             icon = on_icon if status == "1" else off_icon

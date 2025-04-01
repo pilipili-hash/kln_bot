@@ -85,7 +85,7 @@ class TodayAnime(BasePlugin):
                 content=messages
             )
     @bot.group_event()
-    @feature_required("今日番剧")
+    @feature_required("今日番剧","今日番剧")
     async def handle_group_message(self, event: GroupMessage):
         if event.raw_message == "今日番剧":
             data = await self.fetch_today_anime()

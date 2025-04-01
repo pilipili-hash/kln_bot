@@ -99,7 +99,7 @@ class OpenAIContextManager:
         if context:
             messages.append({"role": "assistant", "content": context})
         messages.append({"role": "user", "content": prompt})
-
+        #自己反代的gemini地址用的openai的格式接口方便一些。
         url = "https://gemini.syy-freeusa.workers.dev/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
