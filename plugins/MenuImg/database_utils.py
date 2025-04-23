@@ -136,7 +136,7 @@ def generate_image(data: list) -> BytesIO:
         off_icon = Image.open(off_icon_path).convert("RGBA") if os.path.exists(off_icon_path) else None
 
         # 调整图标大小并保持比例
-        icon_size = (50, 50)
+        icon_size = (80, 80)
         if on_icon:
             on_icon.thumbnail(icon_size, Image.Resampling.LANCZOS)
         if off_icon:
@@ -192,35 +192,35 @@ def generate_image(data: list) -> BytesIO:
                 width=2
             )
 
+           
+            title_font_size = 80# 增大标题字体大小
             # 获取成员信息
             title = item.get("title", "未定义标题")
-            content = item.get("content", "未定义内容")
             status = item.get("status", 0)
-
+                      
             # 绘制序号和标题（带描边）
-            text_x = box_x1 + 80  # 留出图标空间
-            text_y = box_y1 + 20
-            for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:  # 黑色描边
-                draw.text((text_x + offset[0], text_y + offset[1]), f"{index + 1}:{title}", fill=(0, 0, 0), font=font)
+            text_x = box_x1 + 100  # 留出图标空间
+            text_y = box_y1 + (box_height - title_font_size) // 2  # 垂直居中
 
-            # 绘制文字本体（白色）
-            draw.text((text_x, text_y), f"{index + 1}:{title}", fill=(255, 255, 255), font=font)
+            # 深色描边，浅色文字
+            stroke_width = 2  # 增加描边宽度
+            stroke_color = (0,0,0)  # 更深的灰色
+            text_color = (255, 255, 255)  # 浅灰色
 
-            # 绘制内容，超出边框显示省略号
-            max_content_width = box_width - 200  # 内容最大宽度
-            content = truncate_text(content, font, max_content_width)
+            # 使用更大的字体绘制标题
 
-            # 绘制内容文字描边（黑色）
-            for offset in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
-                draw.text((text_x + offset[0], text_y + 40 + offset[1]), f"内容: {content}", fill=(0, 0, 0), font=font)
+            title_font = ImageFont.truetype(font_path, title_font_size) if os.path.exists(font_path) else ImageFont.load_default()
 
-            # 绘制内容文字本体（白色）
-            draw.text((text_x, text_y + 40), f"内容: {content}", fill=(255, 255, 255), font=font)
+            for offset in [(-stroke_width, -stroke_width), (-stroke_width, stroke_width), (stroke_width, -stroke_width), (stroke_width, stroke_width)]:
+                draw.text((text_x + offset[0], text_y + offset[1]), f"{index + 1}:{title}", fill=stroke_color, font=title_font)
+
+            # 绘制文字本体（浅色）
+            draw.text((text_x, text_y), f"{index + 1}:{title}", fill=text_color, font=title_font)
 
             # 绘制状态图标
             icon = on_icon if status == "1" else off_icon
             if icon:
-                img.paste(icon, (box_x1 + 10, box_y1 + 35), icon)
+                img.paste(icon, (box_x1 + 10, box_y1 + 55), icon)
 
         # 将半透明图层叠加到主图层
         img = Image.alpha_composite(img, overlay)
@@ -277,3 +277,4 @@ def merge_menu_data(existing_menu_data, new_menu_data):
 
     # 如果有其他字段需要合并，可以在这里处理
     return existing_menu_data
+
