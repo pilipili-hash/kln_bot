@@ -25,7 +25,7 @@ class TodayAnime(BasePlugin):
     async def fetch_today_anime(self):
         url = "https://api.bgm.tv/calendar"
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
+            async with session.get(url, allow_redirects=True) as response: 
                 if response.status == 200:
                     data = await response.json()
                     return data
@@ -43,7 +43,9 @@ class TodayAnime(BasePlugin):
         for weekday in data:
             if weekday["weekday"]["cn"] == today_cn:
                 for item in weekday["items"]:
-                   
+                    # 检查 item["images"] 是否为 None
+                    if not item["images"]:
+                        continue
                     image_url = item["images"]["large"]
                     anime_info = {
                         "title": item.get("name_cn", item["name"]),

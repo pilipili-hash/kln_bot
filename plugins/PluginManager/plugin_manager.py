@@ -77,7 +77,7 @@ def feature_required(feature_name, raw_message_filter=None):
     """
     装饰器：检查功能是否开启，并根据指令触发条件执行功能。
     :param feature_name: 功能名称，用于检查功能是否开启。
-    :param raw_message_filter: 指令触发条件，可以是字符串或正则表达式。
+    :param raw_message_filter: 指令触发条件，可以是字符串、正则表达式或字符串列表。
     """
     def decorator(func):
         @wraps(func)
@@ -88,13 +88,17 @@ def feature_required(feature_name, raw_message_filter=None):
             # 检查指令是否匹配
             if raw_message_filter:
                 if isinstance(raw_message_filter, str):
-                    # 字符串匹配
+                    # 单个字符串匹配
                     if not raw_message.startswith(raw_message_filter):
-                        return await func(self, event, *args, **kwargs)
+                        return
+                elif isinstance(raw_message_filter, list):
+                    # 字符串列表匹配
+                    if not any(raw_message.startswith(cmd) for cmd in raw_message_filter):
+                        return
                 elif isinstance(raw_message_filter, re.Pattern):
                     # 正则匹配
                     if not raw_message_filter.match(raw_message):
-                        return await func(self, event, *args, **kwargs)
+                        return
 
             # 检查功能是否开启
             if not await is_feature_enabled(group_id, feature_name):

@@ -1,8 +1,8 @@
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.utils.config import config
-from .pokeData import init_db, add_poke_reply, get_random_poke_reply, get_all_poke_replies, generate_replies_image,delete_poke_reply
+from .pokeData import *
 from ncatbot.core.message import GroupMessage
-from utils.group_forward_msg import send_group_forward_msg_cq # 添加依赖
+from utils.group_forward_msg import send_group_msg_cq # 添加依赖
 import os
 bot = CompatibleEnrollment
 
@@ -27,7 +27,7 @@ class PokeReply(BasePlugin):
             print(content)
             if content:
                 await add_poke_reply(group_id, content)
-                await send_group_forward_msg_cq(
+                await send_group_msg_cq(
                     group_id,
                     "添加成功"
                 )
@@ -57,7 +57,7 @@ class PokeReply(BasePlugin):
                 index = int(message[len("/删除cyc"):].strip())
                 success = await delete_poke_reply(group_id, index)
                 if success:
-                    await send_group_forward_msg_cq(
+                    await send_group_msg_cq(
                         group_id,
                         f"成功删除第 {index} 条戳一戳内容。"
                     )
@@ -82,7 +82,7 @@ class PokeReply(BasePlugin):
             if group_id:
                 reply = await get_random_poke_reply(group_id)
                 if reply:
-                    await send_group_forward_msg_cq(
+                    await send_group_msg_cq(
                         group_id,
                         reply
                     )

@@ -2,7 +2,7 @@ import os
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage
 from AiReply.message_db import OpenAIContextManager  # 导入上下文管理器
-import time
+from PluginManager.plugin_manager import master_required  # 导入管理员检查装饰器
 
 bot = CompatibleEnrollment  # 兼容回调函数注册器
 
@@ -12,6 +12,7 @@ class AiReply(BasePlugin):
     version = "0.0.1"  # 插件版本
 
     @bot.group_event()
+    @master_required(commands=["/修改设定", "/清空上下文"])# 检查是否为管理员
     async def on_group_event(self, msg: GroupMessage):
         """
         处理群消息事件
@@ -19,6 +20,20 @@ class AiReply(BasePlugin):
         group_id = msg.group_id
         raw_message = msg.raw_message
         try:
+            # 检查是否为修改设定命令
+            if raw_message.strip().startswith("/修改设定"):
+                new_setting = raw_message.strip()[len("/修改设定"):].strip()
+                if new_setting:
+                    await self.context_manager.save_setting(group_id, new_setting)
+                    await self.api.post_group_msg(group_id, text=f"设定已更新", reply=msg.message_id)
+                return  # 处理完设定修改后直接返回
+
+            # 检查是否为清空上下文命令
+            if raw_message.strip().startswith("/清空上下文"):
+                await self.context_manager.clear_context(group_id)
+                await self.api.post_group_msg(group_id, text="上下文已清空", reply=msg.message_id)
+                return  # 处理完清空上下文后直接返回
+
             # 检查是否被 @ 或以“机器人”开头
             is_at = f"[CQ:at,qq={msg.self_id}]" in raw_message
             is_start_with_robot = raw_message.startswith("机器人")
@@ -29,8 +44,13 @@ class AiReply(BasePlugin):
                 if not reply_text:
                     return  # 如果没有内容，不处理
 
+                # 检查是否以“联网”开头
+                use_search_model = reply_text.startswith("联网")
+                if use_search_model:
+                    reply_text = reply_text[len("联网"):].strip()
+
                 # 调用 OpenAIContextManager 获取回复
-                response = await self.context_manager.get_openai_reply(group_id, reply_text)
+                response = await self.context_manager.get_openai_reply(group_id, reply_text, use_search_model)
                 if response:
                     await self.api.post_group_msg(group_id, text=response, reply=msg.message_id)
         except Exception as e:

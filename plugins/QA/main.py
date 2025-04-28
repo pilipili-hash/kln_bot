@@ -4,7 +4,7 @@ from QA.database_handler import QADatabaseHandler
 from QA.image_generator import generate_qa_image
 import re
 from PluginManager.plugin_manager import master_required
-from utils.group_forward_msg import send_group_forward_msg_cq
+from utils.group_forward_msg import send_group_msg_cq
 import os
 
 bot = CompatibleEnrollment
@@ -74,13 +74,13 @@ class QA(BasePlugin):
         # 查找精确匹配的答案
         answer = await self.db_handler.get_answer(group_id, raw_message)
         if answer:
-            await send_group_forward_msg_cq(group_id, answer)
+            await send_group_msg_cq(group_id, answer)
             return
 
         # 查找模糊匹配的答案
         answer = await self.db_handler.get_answer_fuzzy(group_id, raw_message)
         if answer:
-            await send_group_forward_msg_cq(group_id, answer)
+            await send_group_msg_cq(group_id, answer)
             return
 
         # 如果没有找到答案

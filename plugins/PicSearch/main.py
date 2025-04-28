@@ -5,7 +5,7 @@ from PluginManager.plugin_manager import feature_required
 from utils.group_forward_msg import get_cqimg  # 导入 get_cqimg 函数
 import re
 from .image_utils import search_image, format_results  # 导入图片处理函数
-
+from utils.priority_handler import register_handler
 bot = CompatibleEnrollment
 
 class PicSearch(BasePlugin):
@@ -29,7 +29,7 @@ class PicSearch(BasePlugin):
             )
         else:
             await self.api.post_group_msg(event.group_id, text="搜图失败，请稍后再试。")
-
+    @register_handler(10)
     @bot.group_event()
     @feature_required("搜图", raw_message_filter="/搜图")
     async def handle_group_message(self, event: GroupMessage):

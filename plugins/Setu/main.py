@@ -5,7 +5,7 @@ from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage
 from PluginManager.plugin_manager import feature_required
 from utils.group_forward_msg import send_group_forward_msg_ws, cq_img
-from utils.config_manager import get_config, load_config
+from utils.config_manager import get_config
 from io import BytesIO
 from PIL import Image
 import random
@@ -21,7 +21,7 @@ class Setu(BasePlugin):
     async def on_load(self):
         print(f"{self.name} 插件已加载")
         print(f"插件版本: {self.version}")
-        await load_config()  # 加载全局配置
+
 
     async def fetch_setu(self, num: int = 1, r18: int = 0):
         """

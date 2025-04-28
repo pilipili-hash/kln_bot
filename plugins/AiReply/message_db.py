@@ -23,7 +23,8 @@ class OpenAIContextManager:
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS ai_txt (
                         group_id TEXT PRIMARY KEY NOT NULL,
-                        context TEXT NOT NULL
+                        context TEXT NOT NULL,
+                        setting TEXT DEFAULT '你是一个智能助手。'
                     )
                 """)
                 await conn.commit()
@@ -85,7 +86,35 @@ class OpenAIContextManager:
         except Exception as e:
             _log.error(f"保存上下文时出错: {e}")
 
-    async def get_openai_reply(self, group_id, prompt):
+    async def save_setting(self, group_id, setting):
+        """
+        保存或更新指定群号的设定
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                await conn.execute("""
+                    INSERT INTO ai_txt (group_id, setting, context) VALUES (?, ?, '')
+                    ON CONFLICT(group_id) DO UPDATE SET setting = excluded.setting
+                """, (group_id, setting))
+                await conn.commit()
+                _log.info(f"已更新群号 {group_id} 的设定为: {setting}")
+        except Exception as e:
+            _log.error(f"保存设定时出错: {e}")
+
+    async def get_setting(self, group_id):
+        """
+        获取指定群号的设定
+        """
+        try:
+            async with aiosqlite.connect(self.db_path) as conn:
+                async with conn.execute("SELECT setting FROM ai_txt WHERE group_id = ?", (group_id,)) as cursor:
+                    result = await cursor.fetchone()
+                    return result[0] if result else "你是一个智能助手。"
+        except Exception as e:
+            _log.error(f"获取设定时出错: {e}")
+            return "你是一个智能助手。"
+
+    async def get_openai_reply(self, group_id, prompt, use_search_model=False):
         """
         调用 OpenAI 接口获取回复，并更新上下文
         """
@@ -93,20 +122,24 @@ class OpenAIContextManager:
             _log.error("API 密钥未初始化，无法调用 OpenAI 接口！")
             return "抱歉，API 密钥未正确配置，无法处理您的请求。"
 
-        # 获取当前上下文
+        # 获取当前上下文和设定
         context = await self.get_context(group_id)
-        messages = [{"role": "system", "content": "你是一个智能助手。"}]
+        setting = await self.get_setting(group_id)
+        messages = [{"role": "system", "content": setting}]
         if context:
             messages.append({"role": "assistant", "content": context})
         messages.append({"role": "user", "content": prompt})
-        #自己反代的gemini地址用的openai的格式接口方便一些。
+
+        # 根据是否使用搜索模型选择模型名称
+        model_name = "gemini-2.0-flash:search" if use_search_model else "gemini-2.0-flash-exp"
+
         url = "https://gemini.syy-freeusa.workers.dev/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
         payload = {
-            "model": "gemini-2.0-flash-exp",
+            "model": model_name,
             "messages": messages,
             # "temperature": 0.7
         }

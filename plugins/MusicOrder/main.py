@@ -4,7 +4,7 @@ from urllib.parse import quote
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage
 from ncatbot.core.element import Music
-from utils.group_forward_msg import send_group_forward_msg_cq
+from utils.group_forward_msg import send_group_msg_cq
 from PluginManager.plugin_manager import feature_required
 
 bot = CompatibleEnrollment
@@ -140,7 +140,7 @@ class MusicOrder(BasePlugin):
                                     "image": music_image
                                 }
                             }
-                            await send_group_forward_msg_cq(group_id, music_message)
+                            await send_group_msg_cq(group_id, music_message)
                         except KeyError as e:
                             print(f"KeyError: {e}")
                             await self.api.post_group_msg(group_id, text=f"获取歌曲信息失败，KeyError: {e}")

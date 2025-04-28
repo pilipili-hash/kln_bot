@@ -2,12 +2,14 @@ from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage
 from .wife_handler import get_daily_wife_message
 from ncatbot.core.element import MessageChain, Text, Image, At
+
 bot = CompatibleEnrollment
 
 class DailyWife(BasePlugin):
     name = "DailyWife"  # 插件名称
     version = "1.0.0"  # 插件版本
 
+  # 设置优先级，数字越小优先级越高
     @bot.group_event()
     async def handle_group_message(self, event: GroupMessage):
         """

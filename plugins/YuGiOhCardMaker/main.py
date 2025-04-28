@@ -7,7 +7,7 @@ from ncatbot.core.message import GroupMessage
 from ncatbot.core.element import MessageChain, Text
 import httpx
 import urllib.parse
-from utils.group_forward_msg import get_cqimg,send_group_forward_msg_cq
+from utils.group_forward_msg import get_cqimg,send_group_msg_cq
 import ssl
 from textwrap import wrap  
 bot = CompatibleEnrollment
@@ -124,7 +124,7 @@ class YuGiOhCardMaker(BasePlugin):
                 await self.api.post_group_msg(group_id, text="正在制作中~")
                 card_image_cq = await self.generate_card(state)
                 if card_image_cq:
-                    await send_group_forward_msg_cq(group_id, card_image_cq)
+                    await send_group_msg_cq(group_id, card_image_cq)
                 else:
                     await self.api.post_group_msg(group_id, text="卡片制作失败，请稍后再试")
                 del self.user_states[user_id]

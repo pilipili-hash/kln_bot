@@ -6,7 +6,7 @@ _log = get_log()
 
 _config = {}
 
-async def load_config(config_path="config.yaml"):
+def load_config(config_path="config.yaml"):
     """
     加载 YAML 配置文件并存储到全局变量中。
     """

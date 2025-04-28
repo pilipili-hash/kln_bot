@@ -31,7 +31,7 @@ async def send_group_forward_msg_ws(group_id, content):
         await websocket.send(json.dumps(payload))
         response = await websocket.recv()
         # print("收到响应:", response)
-async def send_group_forward_msg_cq(group_id, content):
+async def send_group_msg_cq(group_id, content):
     """
     使用 WebSocket 发送群组转发消息，支持动态构建消息内容。
 
