@@ -20,6 +20,7 @@ Requests = "==2.32.3"
 ruamel-base = "==1.0.0"
 websockets = "==10.4"
 meme_generator = "==0.2.0"
+pixivpy3 = "==3.7.5"
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0"
 mypy = "^1.0"
