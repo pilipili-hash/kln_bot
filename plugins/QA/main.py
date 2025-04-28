@@ -6,7 +6,7 @@ import re
 from PluginManager.plugin_manager import master_required
 from utils.group_forward_msg import send_group_msg_cq
 import os
-
+import html
 bot = CompatibleEnrollment
 
 class QA(BasePlugin):
@@ -23,11 +23,10 @@ class QA(BasePlugin):
     async def handle_group_message(self, event: GroupMessage):
         group_id = event.group_id
         raw_message = event.raw_message.strip()
-
+        raw_message = html.unescape(raw_message)
         # 检查表是否存在，不存在则创建
         if not await self.db_handler.table_exists(group_id):
             await self.db_handler.create_table(group_id)
-
         # 处理 "精确问 答" 格式的消息
         match_exact = re.match(r"^精确问\s*(.+?)\s*答\s*(.+)$", raw_message)
         if match_exact:

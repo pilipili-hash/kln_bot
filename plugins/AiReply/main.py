@@ -23,6 +23,16 @@ class AiReply(BasePlugin):
             # 检查是否为修改设定命令
             if raw_message.strip().startswith("/修改设定"):
                 new_setting = raw_message.strip()[len("/修改设定"):].strip()
+
+                def escape_json(text):
+                    text = text.replace('\\', '\\\\')  # 转义反斜杠
+                    text = text.replace('"', '\\"')    # 转义双引号
+                    text = text.replace('\n', '\\n')    # 转义换行符
+                    text = text.replace('\r', '\\r')    # 转义回车符
+                    return text
+
+                new_setting = escape_json(new_setting)
+
                 if new_setting:
                     await self.context_manager.save_setting(group_id, new_setting)
                     await self.api.post_group_msg(group_id, text=f"设定已更新", reply=msg.message_id)
