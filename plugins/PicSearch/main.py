@@ -29,9 +29,9 @@ class PicSearch(BasePlugin):
             )
         else:
             await self.api.post_group_msg(event.group_id, text="搜图失败，请稍后再试。")
-    @register_handler(10)
+#    @register_handler(10)
     @bot.group_event()
-    @feature_required("搜图", raw_message_filter="/搜图")
+#    @feature_required("搜图", raw_message_filter="/搜图")
     async def handle_group_message(self, event: GroupMessage):
         """处理群消息事件"""
         group_id = event.group_id

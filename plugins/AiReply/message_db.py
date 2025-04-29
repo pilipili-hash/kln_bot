@@ -133,7 +133,7 @@ class OpenAIContextManager:
         # 根据是否使用搜索模型选择模型名称
         model_name = "gemini-2.0-flash:search" if use_search_model else "gemini-2.0-flash-exp"
 
-        url = "https://gemini.syy-freeusa.workers.dev/v1/chat/completions"
+        url = "https://gemn.ariaxz.tk/v1/chat/completions"#替换了反代网址不需要科学上网就可用,可自行去这里自己搭建然后填自己的https://github.com/PublicAffairs/openai-gemini
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
