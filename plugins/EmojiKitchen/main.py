@@ -38,7 +38,7 @@ class EmojiKitchen(BasePlugin):
                     return None
 
     @bot.group_event()
-    @feature_required("emoji合成")
+    @feature_required("emoji合成",re.compile(r"^([\U0001F000-\U0001FFFF])\s*([\U0001F000-\U0001FFFF])$"))
     async def handle_group_message(self, event: GroupMessage):
         """
         处理群消息事件，仅在接收到两个 Emoji 时进行合成。
