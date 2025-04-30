@@ -1,6 +1,7 @@
 import re
 import base64
 from meme_generator import get_memes, Meme,search_memes
+from meme_generator.tools import MemeProperties, MemeSortBy, render_meme_list
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage
 from .meme_utils import get_avatar, generate_meme, generate_keywords_image, get_member_name, handle_avatar_and_name
@@ -19,10 +20,11 @@ class MemeCreator(BasePlugin):
     async def handle_group_message(self, event: GroupMessage):
         raw_message = event.raw_message
         # print(event.message)
-        if raw_message.strip() == "/m ls":
+        if (raw_message.strip() == "/m ls"):
             try:
-                keywords_image = await generate_keywords_image(self.memes)
-                base64_image = base64.b64encode(keywords_image.getvalue()).decode("utf-8")
+
+                keywords_image = render_meme_list(sort_by=MemeSortBy.Key, add_category_icon=True)
+                base64_image = base64.b64encode(keywords_image).decode("utf-8")
                 cq_image = f"[CQ:image,file=base64://{base64_image}]"
                 await send_group_msg_cq(event.group_id, cq_image)
             except Exception as e:
@@ -87,8 +89,25 @@ class MemeCreator(BasePlugin):
         image_data = []
         names = []
 
-        # 处理多个 @ 的头像和名称
-        if qq_numbers:
+        # 检查是否有用户发送的图片
+        image_segments = [segment for segment in event.message if segment["type"] == "image"]
+        if image_segments:
+            for segment in image_segments:
+                image_url = segment["data"]["url"]
+                try:
+                    # 使用 get_avatar 函数下载图片数据
+                    image_data_io = await get_avatar(image_url)
+                    if image_data_io:
+                        image_data.append(image_data_io)
+                    else:
+                        await self.api.post_group_msg(group_id=event.group_id, text="下载用户图片失败")
+                        return
+                except Exception as e:
+                    await self.api.post_group_msg(group_id=event.group_id, text=f"处理用户图片失败: {e}")
+                    return
+
+        # 如果没有用户图片，处理多个 @ 的头像和名称
+        if not image_data and qq_numbers:
             for qq_number in qq_numbers:
                 avatar_data, name = await handle_avatar_and_name(self.api, event.group_id, int(qq_number))
                 if not avatar_data:
@@ -97,7 +116,7 @@ class MemeCreator(BasePlugin):
                 image_data.append(avatar_data)
                 names.append(name)
 
-        # 如果需要的图片数量大于已提供的头像数量，用发送者的头像补充
+        # 如果需要的图片数量大于已提供的头像或用户图片数量，用发送者的头像补充
         while len(image_data) < meme.info.params.min_images:
             avatar_data, name = await handle_avatar_and_name(self.api, event.group_id, event.user_id)
             if not avatar_data:

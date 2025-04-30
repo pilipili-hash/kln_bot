@@ -8,17 +8,20 @@ from meme_generator import Image as MemeImage
 from typing import Any, Optional
 from meme_generator import Meme, TextNumberMismatch, ImageNumberMismatch, ImageAssetMissing, ImageDecodeError, ImageEncodeError, DeserializeError, MemeFeedback, TextOverLength
 
-async def get_avatar(qq_number: str) -> Optional[io.BytesIO]:
+async def get_avatar(identifier: Any) -> Optional[io.BytesIO]:
     """
-    获取QQ头像
+    获取QQ头像或从URL下载图片
     """
     try:
-        url = f"https://q.qlogo.cn/g?b=qq&nk={qq_number}&s=640"
-        response = requests.get(url, stream=True, timeout=10)
+        if isinstance(identifier, str) and identifier.startswith("http"):  # 如果是URL
+            response = requests.get(identifier, stream=True, timeout=10)
+        else:  # 如果是QQ号
+            url = f"https://q.qlogo.cn/g?b=qq&nk={identifier}&s=640"
+            response = requests.get(url, stream=True, timeout=10)
         response.raise_for_status()
         return io.BytesIO(response.content)
     except Exception as e:
-        print(f"获取头像失败: {e}")
+        print(f"获取头像或下载图片失败: {e}")
         return None
 
 async def generate_meme(meme: Meme, image_data: list[io.BytesIO], texts: list[str], options: dict[str, Any], names: list[str]) -> Optional[bytes]:
