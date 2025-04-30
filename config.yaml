@@ -4,7 +4,7 @@ proxy: "http://127.0.0.1:1100"
 
 bot_name: "小黑"
 
-master: [,4123213]
+master: [4123213]
 
 saucenao_api_key: ""
 

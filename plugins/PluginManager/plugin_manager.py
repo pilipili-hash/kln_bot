@@ -6,37 +6,10 @@ import os
 import aiofiles
 from ncatbot.utils.logger import get_log
 import re
+from utils.config_manager import get_config
 _log = get_log()
 
-async def load_yaml_file(file_path, default=None):
-    """
-    异步加载 YAML 文件并返回其内容。
-    
-    :param file_path: 文件路径
-    :param default: 如果文件不存在或解析失败，返回的默认值
-    :return: 文件内容或默认值
-    """
-    try:
-        async with aiofiles.open(file_path, "r", encoding="utf-8") as file:
-            content = await file.read()
-            return yaml.safe_load(content)
-    except FileNotFoundError:
-        _log.info(f"文件未找到: {file_path}")
-    except yaml.YAMLError as e:
-        _log.info(f"解析 YAML 文件出错: {e}")
-    return default
 
-async def get_config_value(key, default=None):
-    """
-    异步从配置文件中获取指定配置项的值。
-    
-    :param key: 配置项的名称
-    :param default: 如果配置项不存在，返回的默认值
-    :return: 配置项的值，如果未找到则返回 default
-    """
-    config_path = os.path.join(os.getcwd(), "config.yaml")
-    config_data = await load_yaml_file(config_path, {})
-    return config_data.get(key, default)
 
 async def fetch_from_db(query, params=()):
     """
@@ -117,7 +90,7 @@ async def is_master(user_id):
     :param user_id: 用户 QQ 号
     :return: True 如果是管理员，否则 False
     """
-    master_list = await get_config_value("master", [])
+    master_list = get_config("master")
     return user_id in master_list
 
 def master_required(commands=None):

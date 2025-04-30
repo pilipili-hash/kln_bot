@@ -32,15 +32,22 @@ class MemeCreator(BasePlugin):
         # 从 event.message 提取关键词和 @ 信息
         keyword = None
         qq_numbers = []
-        text = ""
+        text_segments = []
 
         for segment in event.message:
-            if segment["type"] == "text" and not keyword:
-                keyword = segment["data"]["text"].strip()  # 提取第一个文本段作为关键词
+            if segment["type"] == "text":
+                if not keyword:
+                    keyword = segment["data"]["text"].strip().split()[0]  # 提取第一个单词作为关键词
+                    remaining_text = segment["data"]["text"].strip()[len(keyword):].strip()
+                    if remaining_text:
+                        text_segments.append(remaining_text)  # 保存剩余的文本
+                else:
+                    text_segments.append(segment["data"]["text"].strip())  # 保存其他文本段
             elif segment["type"] == "at":
                 qq_numbers.append(segment["data"]["qq"])  # 提取所有 @ 的 QQ 号
-            elif segment["type"] == "text":
-                text += segment["data"]["text"].strip()  # 拼接其他文本段作为附加文字
+
+        text = " ".join(text_segments)  # 合并所有文本段
+        text_list = text.split() if text else []
 
         if not keyword:
             return  # 如果没有关键词，直接返回
@@ -99,7 +106,6 @@ class MemeCreator(BasePlugin):
             image_data.append(avatar_data)
             names.append(name)
 
-        text_list = text.split() if text else []
         if len(text_list) < meme.info.params.min_texts or len(text_list) > meme.info.params.max_texts:
             await self.api.post_group_msg(
                 group_id=event.group_id,

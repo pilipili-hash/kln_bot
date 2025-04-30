@@ -68,7 +68,7 @@ class BiliVideoInfo(BasePlugin):
         return message
 
     @bot.group_event()
-    # @feature_required("提取BV封面", raw_message_filter=r".*BV[a-zA-Z0-9]{10}.*")
+    # @feature_required("提取BV封面",re.compile(r"^BV[a-zA-Z0-9]{10}"))
     async def handle_group_message(self, event: GroupMessage):
         """
         处理群消息事件，匹配 BV 号并发送视频信息。

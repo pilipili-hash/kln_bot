@@ -22,16 +22,16 @@ class PicSearch(BasePlugin):
         await self.api.post_group_msg(event.group_id, text="正在搜图中，请稍候...")
         results = await search_image(image_url)
         if results:
-            messages = format_results(results, event.self_id)
+            messages =await format_results(results, event.self_id)
             await send_group_forward_msg_ws(
                 group_id=event.group_id,
                 content=messages
             )
         else:
             await self.api.post_group_msg(event.group_id, text="搜图失败，请稍后再试。")
-#    @register_handler(10)
+    # @register_handler(10)
     @bot.group_event()
-#    @feature_required("搜图", raw_message_filter="/搜图")
+    # @feature_required("搜图", raw_message_filter="/搜图")
     async def handle_group_message(self, event: GroupMessage):
         """处理群消息事件"""
         group_id = event.group_id

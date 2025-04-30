@@ -58,7 +58,7 @@ async def search_image(image_url: str):
         print(f"搜图失败: {e}")
         return None
 
-def format_results(results: dict, self_id: int):
+async def format_results(results: dict, self_id: int):
     """格式化搜索结果为合并转发消息"""
     messages = []
     
