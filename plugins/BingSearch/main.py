@@ -33,6 +33,59 @@ class BingSearch(BasePlugin):
 
         return self.parse_bing_results(response.text)
 
+    def _extract_title_and_link(self, result_element):
+        """提取标题和链接的通用方法"""
+        title = "无标题"
+        link = "无链接"
+
+        title_element = result_element.find("h2")
+        if title_element:
+            a_tag = title_element.find("a")
+            if a_tag and a_tag.get("href"):
+                title = a_tag.get_text(strip=True)
+                link = a_tag.get("href").strip()
+        else:
+            a_tag = result_element.find("a", class_="tilk")
+            if a_tag and a_tag.get("href"):
+                title = a_tag.get_text(strip=True)
+                link = a_tag.get("href").strip()
+            else:
+                a_tag = result_element.find("a", href=True)
+                if a_tag:
+                    title = a_tag.get_text(strip=True)
+                    link = a_tag.get("href").strip()
+
+        return title, link
+
+    def _extract_description(self, result_element):
+        """提取描述的通用方法"""
+        description = "无描述"
+        description_found = False
+
+        paragraph_tags = result_element.find_all("p")
+        for p_tag in paragraph_tags:
+            classes = p_tag.get("class", [])
+            if any("b_lineclamp" in cls for cls in classes):
+                description = p_tag.get_text(strip=True)
+                description_found = True
+                break
+
+        if not description_found:
+            caption_div = result_element.find("div", class_="b_caption")
+            if caption_div:
+                p_tag = caption_div.find("p")
+                if p_tag:
+                    description = p_tag.get_text(strip=True)
+                    description_found = True
+
+        if not description_found:
+            attribution_div = result_element.find("div", class_="b_attribution")
+            if attribution_div:
+                description = attribution_div.get_text(strip=True)
+                description_found = True
+
+        return description
+
     def parse_bing_results(self, html_content: str) -> str:
         """解析 Bing 搜索结果页面"""
         results = []
@@ -46,52 +99,11 @@ class BingSearch(BasePlugin):
         max_results = 5  # 限制最多返回 5 个结果
         for index, result_element in enumerate(search_result_elements[:max_results], start=1):
             try:
-                # 初始化字段
-                title = "无标题"
-                link = "无链接"
-                description = "无描述"
+                # 提取标题和链接
+                title, link = self._extract_title_and_link(result_element)
 
-                # 获取标题和链接
-                title_element = result_element.find("h2")
-                if title_element:
-                    a_tag = title_element.find("a")
-                    if a_tag and a_tag.get("href"):
-                        title = a_tag.get_text(strip=True)
-                        link = a_tag.get("href").strip()
-                else:
-                    a_tag = result_element.find("a", class_="tilk")
-                    if a_tag and a_tag.get("href"):
-                        title = a_tag.get_text(strip=True)
-                        link = a_tag.get("href").strip()
-                    else:
-                        a_tag = result_element.find("a", href=True)
-                        if a_tag:
-                            title = a_tag.get_text(strip=True)
-                            link = a_tag.get("href").strip()
-
-                # 获取描述
-                description_found = False
-                paragraph_tags = result_element.find_all("p")
-                for p_tag in paragraph_tags:
-                    classes = p_tag.get("class", [])
-                    if any("b_lineclamp" in cls for cls in classes):
-                        description = p_tag.get_text(strip=True)
-                        description_found = True
-                        break
-
-                if not description_found:
-                    caption_div = result_element.find("div", class_="b_caption")
-                    if caption_div:
-                        p_tag = caption_div.find("p")
-                        if p_tag:
-                            description = p_tag.get_text(strip=True)
-                            description_found = True
-
-                if not description_found:
-                    attribution_div = result_element.find("div", class_="b_attribution")
-                    if attribution_div:
-                        description = attribution_div.get_text(strip=True)
-                        description_found = True
+                # 提取描述
+                description = self._extract_description(result_element)
 
                 # 记录结果
                 results.append({
@@ -101,11 +113,12 @@ class BingSearch(BasePlugin):
                 })
 
             except Exception as e:
-                print(f"b_algo 块 {index}: 解析失败 - {e}")
+                error_message = f"b_algo 块 {index}: 解析失败 - {e}"
+                print(error_message)
                 results.append({
                     "title": "解析失败",
                     "link": "解析失败",
-                    "description": f"解析失败: {e}"
+                    "description": error_message
                 })
                 continue
 
@@ -114,7 +127,7 @@ class BingSearch(BasePlugin):
         return "\n".join(result_strings) if result_strings else "未找到相关信息。"
 
     @bot.group_event()
-    @feature_required(feature_name="帮你百度", raw_message_filter="/bing")
+    @feature_required(feature_name="帮你bing", raw_message_filter="/bing")
     async def handle_group_message(self, event: GroupMessage):
         """处理群消息事件"""
         raw_message = event.raw_message.strip()

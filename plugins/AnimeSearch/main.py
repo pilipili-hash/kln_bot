@@ -23,15 +23,22 @@ class AnimeSearch(BasePlugin):
         api_url = f"https://api.trace.moe/search?cutBorders&anilistInfo&url={encoded_url}"
         # print(f"请求的 API URL: {api_url}")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url) as response:
-                # print(f"API 响应状态码: {response.status}")
-                if response.status != 200:
-                    error_message = await response.text()
-                    print(f"API 错误信息: {error_message}")
-                    return MessageChain([Text("搜索失败，请稍后再试。")])
-                data = await response.json()
-                return self.format_results(data)
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url) as response:
+                    # print(f"API 响应状态码: {response.status}")
+                    if response.status != 200:
+                        error_message = await response.text()
+                        print(f"API 错误信息: {error_message}")
+                        return MessageChain([Text(f"搜索失败，错误信息：{error_message}")])
+                    data = await response.json()
+                    return self.format_results(data)
+        except aiohttp.ClientError as e:
+            print(f"网络请求错误: {e}")
+            return MessageChain([Text("网络请求失败，请检查网络连接。")])
+        except Exception as e:
+            print(f"发生未知错误: {e}")
+            return MessageChain([Text("搜索过程中发生未知错误，请稍后再试。")])
 
     def format_results(self, data: dict) -> MessageChain:
         """格式化 API 返回的结果为 MessageChain 类型"""
@@ -49,23 +56,23 @@ class AnimeSearch(BasePlugin):
             similarity = round(result["similarity"] * 100, 2)
             image_url = result["image"]
 
-            # 添加文本信息到消息链
+            # 使用 += 运算符简化消息链的构建
             message_chain += MessageChain([
-                Text(f"番剧名称: {title} ({romaji} / {english})\n"),
-                Text(f"集数: {episode}\n"),
-                Text(f"相似度: {similarity}%\n")
+                Text(f"番剧名称: {title} ({romaji} / {english})\n集数: {episode}\n相似度: {similarity}%\n"),
+                Image(image_url)
             ])
-
-            # 添加图片到消息链
-            message_chain += Image(image_url)
 
         return message_chain
 
     async def handle_image_search(self, group_id: int, image_url: str):
         """处理图片搜索逻辑"""
-        await self.api.post_group_msg(group_id, text="正在搜索，请稍候...")
-        result = await self.search_anime(image_url)
-        await self.api.post_group_msg(group_id, rtf=result)
+        try:
+            await self.api.post_group_msg(group_id, text="正在搜索，请稍候...")
+            result = await self.search_anime(image_url)
+            await self.api.post_group_msg(group_id, rtf=result)
+        except Exception as e:
+            print(f"搜索过程中发生错误: {e}")
+            await self.api.post_group_msg(group_id, text=f"搜索失败，发生错误：{e}")
 
     @bot.group_event()
     @feature_required("以图搜番",raw_message_filter="/搜番")
@@ -89,10 +96,13 @@ class AnimeSearch(BasePlugin):
 
         # 如果消息是图片，且用户之前发送了 "/搜番"
         if group_id in self.pending_search and self.pending_search[group_id] == user_id:
+            image_url = None
             for segment in event.message:  # 确保这里访问的是正确的属性
                 if segment["type"] == "image":  # 检查消息类型是否为图片
                     image_url = segment["data"].get("url")  # 提取图片的 URL
-                    if image_url:
-                        # 清除用户状态
-                        del self.pending_search[group_id]
-                        await self.handle_image_search(group_id, image_url)
+                    break  # 找到第一个图片就停止
+
+            if image_url:
+                # 清除用户状态
+                del self.pending_search[group_id]
+                await self.handle_image_search(group_id, image_url)

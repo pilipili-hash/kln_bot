@@ -60,7 +60,7 @@ class MemeCreator(BasePlugin):
             if not match:
                 return
             index = int(match.group(1)) - 1
-        else:
+        elif not keyword.isdigit():  # 避免纯数字触发
             # 查找关键词对应的表情包
             memes = search_memes(keyword)
             if not memes:
@@ -80,6 +80,8 @@ class MemeCreator(BasePlugin):
                 return
 
             index = list(self.memes.keys()).index(meme.key)
+        else:
+            return  # 如果是纯数字且不符合 /m 指令格式，直接返回
 
         if index < 0 or index >= len(self.memes):
             await self.api.post_group_msg(group_id=event.group_id, text="无效的表情序号或关键词")

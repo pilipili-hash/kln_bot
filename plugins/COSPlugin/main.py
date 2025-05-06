@@ -25,20 +25,17 @@ class COSPlugin(BasePlugin):
             parts = raw_message.split()
             if len(parts) != 2 or not parts[1].isdigit():
                 await self._send_error_message(event, "格式错误，请使用 /cos 数字")
-                return
-
-            num_images = int(parts[1])
-            if not (1 <= num_images <= 10):
-                await self._send_error_message(event, "数量必须在1到10之间")
-                return
-
-            image_urls = await get_cos_images(num_images)
-            if not image_urls:
-                await self._send_error_message(event, "获取图片失败")
-                return
-
-            messages = self._build_forward_messages(event.self_id, image_urls)
-            await send_group_forward_msg_ws(event.group_id, messages)
+            else:
+                num_images = int(parts[1])
+                if not (1 <= num_images <= 10):
+                    await self._send_error_message(event, "数量必须在1到10之间")
+                else:
+                    image_urls = await get_cos_images(num_images)
+                    if not image_urls:
+                        await self._send_error_message(event, "获取图片失败")
+                    else:
+                        messages = self._build_forward_messages(event.self_id, image_urls)
+                        await send_group_forward_msg_ws(event.group_id, messages)
 
         except Exception as e:
             await self._send_error_message(event, f"发生错误: {str(e)}")

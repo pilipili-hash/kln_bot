@@ -1,0 +1,35 @@
+#更详细的配置查看https://github.com/hect0x7/JMComic-Crawler-Python/blob/master/assets/docs/sources/option_file_syntax.md
+client:
+  cache: null
+  domain: []
+  impl: html
+  postman:
+    meta_data:
+      headers: null
+      impersonate: chrome110
+      proxies: {}
+    type: cffi
+  retry_times: 5
+dir_rule:
+  base_dir: static/jm/ # 下载目录改为项目根目录下的 static/jm
+  rule: Bd_Pname
+download:
+  cache: true
+  image:
+    decode: true
+    suffix: null
+  threading:
+    image: 30
+    photo: 12
+log: true
+plugins:
+  valid: log
+version: '2.1'
+plugins:
+  after_album:
+    # 把章节的所有图片合并为一个pdf的插件
+    # 使用前需要安装依赖库: [pip install img2pdf]
+    - plugin: img2pdf
+      kwargs:
+        pdf_dir: static/jm/pdf/ # pdf存放文件夹改为 static/jm/pdf
+        filename_rule: Aid # 修复 filename_rule，使用专辑名称作为文件名

@@ -1,11 +1,11 @@
 import aiohttp
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage
-from ncatbot.core.element import MessageChain, Text, Image
 from PluginManager.plugin_manager import feature_required
 from urllib.parse import quote
 from utils.group_forward_msg import send_group_forward_msg_ws
 import re
+from typing import Dict, List, Any, Optional
 
 bot = CompatibleEnrollment
 
@@ -17,7 +17,7 @@ class ComicSearch(BasePlugin):
         print(f"{self.name} 插件已加载")
         print(f"插件版本: {self.version}")
 
-    async def fetch_comics(self, query: str):
+    async def fetch_comics(self, query: str) -> Optional[Dict[str, Any]]:
         """调用漫画搜索 API"""
         base_url = "https://www.copy-manga.com/api/kb/web/searchbd/comics"
         params = {
@@ -29,33 +29,37 @@ class ComicSearch(BasePlugin):
         }
         url = f"{base_url}?{'&'.join([f'{k}={quote(str(v))}' for k, v in params.items()])}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status == 200:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    response.raise_for_status()  # 抛出 HTTPError，如果状态码不是 200
                     data = await response.json()
                     return data
-                else:
-                    return None
+        except aiohttp.ClientError as e:
+            self.logger.error(f"漫画搜索 API 请求失败: {e}")
+            return None
+        except Exception as e:
+            self.logger.exception(f"处理漫画搜索 API 响应时发生错误: {e}")
+            return None
 
-    def format_comics_data(self, data):
+    def format_comics_data(self, data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """格式化漫画数据"""
         if not data or data.get("code") != 200 or not data.get("results"):
             return []
 
-        comics = []
+        comics: List[Dict[str, Any]] = []
         for item in data["results"]["list"]:
-            comic_info = {
+            comics.append({
                 "name": item["name"],
                 "alias": item["alias"],
                 "cover": item["cover"],
-                "author": ", ".join([author["name"] for author in item["author"]]),
+                "author": ", ".join(author["name"] for author in item["author"]),
                 "popular": item["popular"],
                 "path_word": item["path_word"]
-            }
-            comics.append(comic_info)
+            })
         return comics
 
-    async def send_comics_forward(self, event: GroupMessage, comics):
+    async def send_comics_forward(self, event: GroupMessage, comics: List[Dict[str, Any]]):
         """合并转发漫画信息"""
         messages = []
         for comic in comics:
@@ -89,20 +93,24 @@ class ComicSearch(BasePlugin):
         """处理群消息事件"""
         raw_message = event.raw_message.strip()
         match = re.match(r"^/漫画搜索\s*(.*)$", raw_message)
-        if match:
-            query = match.group(1).strip()  # 提取搜索关键词
-            if not query:
-                await self.api.post_group_msg(event.group_id, text="请输入漫画名称")
-                return
+        if not match:
+            return
 
-            await self.api.post_group_msg(event.group_id, text="正在搜索中~请稍等")
+        query = match.group(1).strip()  # 提取搜索关键词
+        if not query:
+            await self.api.post_group_msg(event.group_id, text="请输入漫画名称")
+            return
 
-            data = await self.fetch_comics(query)
-            if data:
-                comics = self.format_comics_data(data)
-                if comics:
-                    await self.send_comics_forward(event, comics)
-                else:
-                    await self.api.post_group_msg(event.group_id, text="未找到相关漫画")
-            else:
-                await self.api.post_group_msg(event.group_id, text="漫画搜索失败，请稍后再试")
+        await self.api.post_group_msg(event.group_id, text="正在搜索中~请稍等")
+
+        data = await self.fetch_comics(query)
+        if not data:
+            await self.api.post_group_msg(event.group_id, text="漫画搜索失败，请稍后再试")
+            return
+
+        comics = self.format_comics_data(data)
+        if not comics:
+            await self.api.post_group_msg(event.group_id, text="未找到相关漫画")
+            return
+
+        await self.send_comics_forward(event, comics)

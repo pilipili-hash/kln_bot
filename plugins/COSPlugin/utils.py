@@ -15,19 +15,18 @@ async def get_cos_images(num: int) -> List[str]:
                 image_urls = [item["pic"] for item in data]
                 modified_urls = []
                 for url in image_urls:
-                    # 下载图片数据
-                    img_response = await client.get(url, timeout=10)
-                    img_response.raise_for_status()
-                    img_data = img_response.content
-
-                    # 修改图片数据的 MD5
-                    md5_hash = hashlib.md5(img_data + b"random_salt").hexdigest()
+                    # 修改图片数据的 MD5,避免下载图片
+                    md5_hash = hashlib.md5(url.encode('utf-8') + b"random_salt").hexdigest()
                     modified_url = f"{url}?md5={md5_hash[:8]}"
                     modified_urls.append(modified_url)
 
                 return modified_urls
-    except (httpx.HTTPStatusError, KeyError) as e:
-        print(f"HTTP or KeyError: {e}")
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP error: {e}")
+    except httpx.TimeoutException as e:
+        print(f"Timeout error: {e}")
+    except KeyError as e:
+        print(f"KeyError: {e}")
     except Exception as e:
         print(f"Unexpected error: {e}")
     return []

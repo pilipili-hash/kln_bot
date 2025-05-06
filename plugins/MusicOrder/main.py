@@ -3,7 +3,7 @@ import re
 from urllib.parse import quote
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage
-from ncatbot.core.element import Music
+from ncatbot.core.element import Music, CustomMusic, MessageChain
 from utils.group_forward_msg import send_group_msg_cq
 from PluginManager.plugin_manager import feature_required
 
@@ -78,7 +78,7 @@ class MusicOrder(BasePlugin):
 
         print(f"handle_group_message: 收到消息 - {raw_message}")  # 添加日志
 
-        if raw_message.startswith("/点歌"):
+        if (raw_message.startswith("/点歌")):
             print("handle_group_message: 消息以 /点歌 开头")  # 添加日志
             song_name = raw_message[3:].strip()
             if not song_name:
@@ -115,7 +115,7 @@ class MusicOrder(BasePlugin):
             else:
                 await self.api.post_group_msg(group_id, text="获取歌曲列表失败，请稍后再试")
         elif user_id in self.user_states and raw_message.isdigit():
-            print("handle_group_message: 消息是数字，且用户在 user_states 中")  # 添加日志
+            # print("handle_group_message: 消息是数字，且用户在 user_states 中")  # 添加日志
             index = int(raw_message)
             print(f"handle_group_message: 用户选择的序号 - {index}")  # 添加日志
             if 1 <= index <= 6:
@@ -129,18 +129,16 @@ class MusicOrder(BasePlugin):
                             music_url = music_info["url"]
                             music_name = music_info["name"]
                             music_image = music_info["image"]
-                            
-                            music_message = {
-                                "type": "music",
-                                "data": {
-                                    "type": "custom",
-                                    "url": music_url,
-                                    "audio": music_url,
-                                    "title": music_name,
-                                    "image": music_image
-                                }
-                            }
-                            await send_group_msg_cq(group_id, music_message)
+
+                            custom_music = CustomMusic(
+                                audio=music_url,  # 音频链接
+                                title=music_name,  # 标题
+                                url=music_url,  # 跳转链接
+                                image=music_image,  # 可选封面图
+                                singer=""  # 可选歌手名
+                            )
+
+                            await self.api.post_group_msg(group_id, rtf=MessageChain([custom_music]))
                         except KeyError as e:
                             print(f"KeyError: {e}")
                             await self.api.post_group_msg(group_id, text=f"获取歌曲信息失败，KeyError: {e}")
