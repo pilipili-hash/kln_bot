@@ -6,6 +6,41 @@
 
 ![menu](/img/menu.png)
 
-这是之前做的机器人迁移过来的,所以基本的想法是参照以前的机器人。
+发送/帮助 带上前面的序号有详细帮助说明。
 
-py很差第一个项目,希望大佬们多多指教。感谢您们。文档后续功能做的差不多了在完善
+安装方法:
+
+首先git代码:
+
+```
+git clone https://github.com/pilipili-hash/kln_bot.git
+```
+
+然后进入目录：
+
+```
+cd kln_bot
+```
+
+```
+python -m venv kln_bot
+```
+
+```
+.\kln_bot\Scripts\activate
+```
+
+```
+pip config set global.index-url https://mirrors.aliyun.com/pypi/simple
+```
+
+```
+pip install -r requirements.txt
+```
+
+```
+在main.py填入qq和端口之后
+python main.py
+```
+
+如何获取pixiv_token，见[pixiv seems not allowing username/password login now · Issue #158 · upbit/pixivpy](https://github.com/upbit/pixivpy/issues/158#issuecomment-778919084)
