@@ -17,5 +17,5 @@ load_config()  # 加载全局配置
 
 if __name__ == "__main__":
     
-    bot.run()
+   bot.run(enable_webui_interaction=False)
 
