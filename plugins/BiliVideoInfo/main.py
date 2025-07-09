@@ -84,11 +84,11 @@ class BiliVideoInfo(BasePlugin):
         # 优化正则表达式，确保提取所有 BV 号
         bvids = re.findall(r"(BV[a-zA-Z0-9]{10})", raw_message)
         if bvids:
-            await self.api.post_group_msg(event.group_id, text="正在获取视频信息，请稍候...")
+            # await self.api.post_group_msg(event.group_id, text="正在获取视频信息，请稍候...")
             video_data_list = await asyncio.gather(*(self.fetch_video_info(bvid) for bvid in bvids))
             for video_data in video_data_list:
                 if video_data:
                     message_chain = self.format_video_info(video_data)
                     await self.api.post_group_msg(event.group_id, rtf=message_chain)
-                else:
-                    await self.api.post_group_msg(event.group_id, text="获取视频信息失败，请稍后再试。")
+                # else:
+                #     await self.api.post_group_msg(event.group_id, text="获取视频信息失败，请稍后再试。")

@@ -1,113 +1,134 @@
-import aiohttp
-import json
-from datetime import datetime
 from ncatbot.plugin import BasePlugin, CompatibleEnrollment
 from ncatbot.core.message import GroupMessage, PrivateMessage
 from PluginManager.plugin_manager import feature_required
-from utils.group_forward_msg import send_group_forward_msg_ws,cq_img
 from ncatbot.core.element import (
-    MessageChain,  # 消息链，用于组合多个消息元素
-    Text,          # 文本消息
-    At,            # @某人
-    Face,          # QQ表情
-    Image,         # 图片
+    MessageChain,
+    Text,
+    At
 )
+from .database import AnimeDB
+from .scheduler import AnimeScheduler
+import asyncio
+from utils.group_forward_msg import send_group_forward_msg_ws
+
 bot = CompatibleEnrollment
 
 class TodayAnime(BasePlugin):
-    name = "TodayAnime"  # 插件名称
-    version = "1.0.1"   # 插件版本
+    name = "TodayAnime"
+    version = "2.0.0"
 
     async def on_load(self):
         print(f"{self.name} 插件已加载")
         print(f"插件版本: {self.version}")
-
-    async def fetch_today_anime(self):
-        url = "https://api.bgm.tv/calendar"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, allow_redirects=True) as response: 
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    return None
-
-    def format_anime_data(self, data):
-        today = datetime.now().strftime("%A")  # 获取当天的英文星期
-        weekday_map = {
-            "Monday": "星期一", "Tuesday": "星期二", "Wednesday": "星期三",
-            "Thursday": "星期四", "Friday": "星期五", "Saturday": "星期六", "Sunday": "星期日"
-        }
-        today_cn = weekday_map.get(today, "")
-        today_anime = []
-        for weekday in data:
-            if weekday["weekday"]["cn"] == today_cn:
-                for item in weekday["items"]:
-                    # 检查 item["images"] 是否为 None
-                    if not item["images"]:
-                        continue
-                    image_url = item["images"]["large"]
-                    anime_info = {
-                        "title": item.get("name_cn", item["name"]),
-                        "image": image_url,
-                        "air_date": item["air_date"]
-                    }
-                    today_anime.append(anime_info)
-        return today_anime
-
-
-    async def send_merged_forward(self, event, data, user_id, is_group=True):
-        messages = []
-        for anime in data:
-            # 构建字符串格式的内容
-            content = (
-                f"番剧名称: {anime['title']}\n"
-                f"{await cq_img(anime['image'])}\n"  # 使用 cq_img 转换图片 URL
-                f"更新时间: {anime['air_date']}"
-            )
-            # 构建消息节点
-            messages.append({
-                "type": "node",
-                "data": {
-                    "nickname": "今日番剧",
-                    "user_id": user_id,  # 使用传递的 user_id
-                    "content": content
-                }
-            })
         
-        # 调用 send_group_forward_msg_ws，发送整个消息列表
-        if is_group:
-            await send_group_forward_msg_ws(
-                group_id=event.group_id,
-                content=messages
-            )
-        else:
-            await send_group_forward_msg_ws(
-                group_id=event.user_id,
-                content=messages
-            )
+        # 初始化数据库
+        self.db = AnimeDB()
+        await self.db.init_db()
+        
+        # 初始化调度器
+        self.scheduler = AnimeScheduler(self.api)
+        
+        # 注册定时任务，每天9点推送番剧
+        self.add_scheduled_task(
+            job_func=self.daily_push,
+            name="anime_daily_push",
+            interval="9:00",  # 每天9点执行
+            # args=(self.api.get,)  # 传入机器人ID作为参数
+        )
+    async def daily_push(self):
+        """每日番剧推送定时任务"""
+        # 如果没有提供bot_id，使用事件的self_id或尝试通过其他方式获取
+            # 从当前正在处理的事件中获取bot_id，如果有的话
+        bot_id = 123456789  # 替换为你的机器人ID
+        
+        await self.scheduler.send_daily_anime(bot_id)
+    
     @bot.group_event()
-    @feature_required("今日番剧","今日番剧")
+    @feature_required("今日番剧", "开启番剧推送")
+    async def handle_subscribe(self, event: GroupMessage):
+        """处理订阅命令"""
+        if event.raw_message == "开启番剧推送":
+            # 添加订阅
+            success = await self.db.add_subscription(event.group_id)
+            if success:
+                await self.api.post_group_msg(
+                    event.group_id,
+                    text="✅ 已开启今日番剧每日推送，将在每天早上9点推送"
+                )
+            else:
+                await self.api.post_group_msg(
+                    event.group_id,
+                    text="❌ 开启推送失败，请稍后再试"
+                )
+    
+    @bot.group_event()
+    @feature_required("今日番剧", "关闭番剧推送")
+    async def handle_unsubscribe(self, event: GroupMessage):
+        """处理取消订阅命令"""
+        if event.raw_message == "关闭番剧推送":
+            # 移除订阅
+            success = await self.db.remove_subscription(event.group_id)
+            if success:
+                await self.api.post_group_msg(
+                    event.group_id,
+                    text="✅ 已关闭今日番剧每日推送"
+                )
+            else:
+                await self.api.post_group_msg(
+                    event.group_id,
+                    text="❌ 关闭推送失败，请稍后再试"
+                )
+    
+    @bot.group_event()
+    @feature_required("今日番剧", "今日番剧")
     async def handle_group_message(self, event: GroupMessage):
+        """响应手动查询命令"""
         if event.raw_message == "今日番剧":
-            data = await self.fetch_today_anime()
+            # 获取番剧数据
+            data = await self.scheduler.fetch_anime_data()
             if data:
-                formatted_data = self.format_anime_data(data)
+                formatted_data = self.scheduler.format_anime_data(data)
                 if formatted_data:
-                    await self.send_merged_forward(event, formatted_data,event.self_id, is_group=True)
+                    messages = await self.scheduler.create_forward_messages(formatted_data, event.self_id)
+                    await send_group_forward_msg_ws(
+                        group_id=event.group_id,
+                        content=messages
+                    )
                 else:
                     await self.api.post_group_msg(event.group_id, text="今天没有番剧更新")
             else:
                 await self.api.post_group_msg(event.group_id, text="获取今日番剧信息失败")
 
+    @bot.group_event()
+    @feature_required("今日番剧", "番剧推送状态")
+    async def handle_status(self, event: GroupMessage):
+        """查询当前群组的订阅状态"""
+        if event.raw_message == "番剧推送状态":
+            is_subscribed = await self.db.is_subscribed(event.group_id)
+            if is_subscribed:
+                await self.api.post_group_msg(
+                    event.group_id,
+                    text="当前状态：已开启番剧推送"
+                )
+            else:
+                await self.api.post_group_msg(
+                    event.group_id,
+                    text="当前状态：未开启番剧推送"
+                )
+    
     @bot.private_event()
     async def handle_private_message(self, event: PrivateMessage):
+        """处理私聊消息"""
         if event.raw_message == "今日番剧":
-            data = await self.fetch_today_anime()
+            data = await self.scheduler.fetch_anime_data()
             if data:
-                formatted_data = self.format_anime_data(data)
+                formatted_data = self.scheduler.format_anime_data(data)
                 if formatted_data:
-                    await self.send_merged_forward(event, formatted_data,event.self_id, is_group=False)
+                    messages = await self.scheduler.create_forward_messages(formatted_data, event.self_id)
+                    await send_group_forward_msg_ws(
+                        group_id=event.user_id,  # 私聊使用user_id
+                        content=messages
+                    )
                 else:
                     await self.api.post_private_msg(event.user_id, text="今天没有番剧更新")
             else:

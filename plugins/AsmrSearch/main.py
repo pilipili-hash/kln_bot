@@ -56,8 +56,6 @@ class AsmrSearch(BasePlugin):
 
     async def handle_audio_play_request(self, group_id: int, user_id: int, user_input: int):
         """处理播放音频请求"""
-        del self.pending_search[group_id]  # 放在函数开头，确保状态清除
-
         if group_id not in self.pending_search:
             await self.api.post_group_msg(group_id, text="请先发送 /听 id 获取音频列表。")
             return
@@ -77,7 +75,9 @@ class AsmrSearch(BasePlugin):
         )
 
         await self.api.post_group_msg(group_id, rtf=MessageChain([custom_music]))
-
+        
+        # 音频发送后再删除记录
+        del self.pending_search[group_id]
     @bot.group_event()
     async def handle_group_message(self, event: GroupMessage):
         """处理群消息事件"""

@@ -122,18 +122,41 @@ class OpenAIContextManager:
             _log.error("API 密钥未初始化，无法调用 OpenAI 接口！")
             return "抱歉，API 密钥未正确配置，无法处理您的请求。"
 
-        # 获取当前上下文和设定
-        context = await self.get_context(group_id)
+        # 获取当前设定
         setting = await self.get_setting(group_id)
+        
+        # 构建对话历史
         messages = [{"role": "system", "content": setting}]
+        
+        # 获取并解析上下文，而不是简单地将其作为单个消息
+        context = await self.get_context(group_id)
         if context:
-            messages.append({"role": "assistant", "content": context})
+            try:
+                # 将保存的上下文分割成对话轮次
+                context_parts = context.split('\n')
+                i = 0
+                while i < len(context_parts):
+                    if i+1 < len(context_parts) and context_parts[i].startswith("User: ") and context_parts[i+1].startswith("Assistant: "):
+                        user_msg = context_parts[i][6:]  # 去掉 "User: " 前缀
+                        asst_msg = context_parts[i+1][11:]  # 去掉 "Assistant: " 前缀
+                        messages.append({"role": "user", "content": user_msg})
+                        messages.append({"role": "assistant", "content": asst_msg})
+                        i += 2
+                    else:
+                        i += 1
+            except Exception as e:
+                _log.error(f"解析上下文时出错: {e}")
+                # 出错时清空上下文重新开始
+                await self.clear_context(group_id)
+                messages = [{"role": "system", "content": setting}]
+        
+        # 添加当前用户消息
         messages.append({"role": "user", "content": prompt})
 
         # 根据是否使用搜索模型选择模型名称
         model_name = "gemini-2.0-flash:search" if use_search_model else "gemini-2.0-flash-exp"
 
-        url = "https://gemn.ariaxz.tk/v1/chat/completions"#替换了反代网址不需要科学上网就可用,可自行去这里自己搭建然后填自己的https://github.com/PublicAffairs/openai-gemini
+        url = "https://gemn.ariaxz.tk/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
@@ -150,8 +173,17 @@ class OpenAIContextManager:
                     if resp.status == 200:
                         data = await resp.json()
                         reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        # 更新上下文
-                        new_context = f"{context}\nUser: {prompt}\nAssistant: {reply}"
+                        
+                        # 更新上下文，保持正确的格式
+                        new_context = context + (f"\nUser: {prompt}\nAssistant: {reply}" if context else f"User: {prompt}\nAssistant: {reply}")
+                        
+                        # 如果上下文太长，可以考虑截取最近的几轮对话
+                        # 这里简单实现，可以根据需要调整长度限制
+                        if len(new_context) > 4000:  # 设置一个合理的长度限制
+                            parts = new_context.split('\nUser: ')
+                            if len(parts) > 3:  # 保留最近的几轮对话
+                                new_context = 'User: ' + '\nUser: '.join(parts[-3:])
+                        
                         await self.save_context(group_id, new_context)
                         return reply
                     else:
