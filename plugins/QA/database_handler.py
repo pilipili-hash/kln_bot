@@ -117,6 +117,70 @@ class QADatabaseHandler:
             _log.error(f"从表 {table_name} 获取所有问答失败: {e}")
             return []
 
+    async def get_all_qa_with_type(self, group_id: int) -> list[dict[str, str]]:
+        """获取指定群的所有问答，包含匹配类型。"""
+        table_name = f"ck_{group_id}"
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(f"SELECT question, answer, match_type FROM {table_name}") as cursor:
+                    results = await cursor.fetchall()
+                    return [{"question": row[0], "answer": row[1], "match_type": row[2]} for row in results]
+        except aiosqlite.Error as e:
+            _log.error(f"从表 {table_name} 获取所有问答失败: {e}")
+            return []
+
+    async def get_qa_count(self, group_id: int) -> int:
+        """获取指定群的问答总数。"""
+        table_name = f"ck_{group_id}"
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(f"SELECT COUNT(*) FROM {table_name}") as cursor:
+                    result = await cursor.fetchone()
+                    return result[0] if result else 0
+        except aiosqlite.Error as e:
+            _log.error(f"从表 {table_name} 获取问答数量失败: {e}")
+            return 0
+
+    async def get_qa_count_by_type(self, group_id: int, match_type: str) -> int:
+        """获取指定群指定类型的问答数量。"""
+        table_name = f"ck_{group_id}"
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(f"SELECT COUNT(*) FROM {table_name} WHERE match_type = ?", (match_type,)) as cursor:
+                    result = await cursor.fetchone()
+                    return result[0] if result else 0
+        except aiosqlite.Error as e:
+            _log.error(f"从表 {table_name} 获取{match_type}问答数量失败: {e}")
+            return 0
+
+    async def search_qa(self, group_id: int, keyword: str) -> list[dict[str, str]]:
+        """搜索包含关键词的问答。"""
+        table_name = f"ck_{group_id}"
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(
+                    f"SELECT question, answer, match_type FROM {table_name} WHERE question LIKE ? OR answer LIKE ?",
+                    (f"%{keyword}%", f"%{keyword}%")
+                ) as cursor:
+                    results = await cursor.fetchall()
+                    return [{"question": row[0], "answer": row[1], "match_type": row[2]} for row in results]
+        except aiosqlite.Error as e:
+            _log.error(f"从表 {table_name} 搜索问答失败: {e}")
+            return []
+
+    async def clear_all_qa(self, group_id: int) -> bool:
+        """清空指定群的所有问答。"""
+        table_name = f"ck_{group_id}"
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(f"DELETE FROM {table_name}")
+                await db.commit()
+            _log.info(f"表 {table_name} 所有问答已清空。")
+            return True
+        except aiosqlite.Error as e:
+            _log.error(f"清空表 {table_name} 失败: {e}")
+            return False
+
     async def delete_qa(self, group_id: int, index: int) -> bool:
         """删除指定群的指定序号的问答。"""
         table_name = f"ck_{group_id}"

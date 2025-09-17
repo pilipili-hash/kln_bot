@@ -50,14 +50,14 @@ class AnimeScheduler:
         for anime in anime_list:
             content = (
                 f"番剧名称: {anime['title']}\n"
-                f"{await cq_img(anime['image'])}\n"
+                f"{cq_img(anime['image'])}\n"
                 f"更新时间: {anime['air_date']}"
             )
             messages.append({
                 "type": "node",
                 "data": {
                     "nickname": "今日番剧推送",
-                    "user_id": bot_id,
+                    "user_id": str(bot_id),  # 确保user_id是字符串类型
                     "content": content
                 }
             })

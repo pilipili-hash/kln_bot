@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import logging
 from io import BytesIO
 import math
 import os
@@ -8,16 +9,15 @@ from typing import List, Union
 from PIL import Image, ImageFont, ImageDraw, ImageFilter
 import httpx
 from .model import SelectedSkin
-from utils.config_manager import get_config  # 导入 load_config
+from utils.config_manager import get_config
 from ncatbot.core.message import GroupMessage
 from utils.group_forward_msg import send_group_msg_cq
 from .crates import Crates
 from .skins import Skins
-from .model import SelectedSkin
-import base64
 
 crates = Crates()
 skins = Skins()
+_log = logging.getLogger(__name__)
 
 PATH = dirname(__file__)
 ASSSETS_DIR = PATH + "/assets"
@@ -165,7 +165,7 @@ class Utils:
                 img = Image.open(BytesIO(response.content))
                 return img
         except Exception as e:
-            print(f"图片下载失败")
+            _log.warning(f"图片下载失败: {url}, 错误: {e}")
             return Image.open(os.path.join(ASSSETS_DIR, "error.png"))
 
     def img_from_PIL(self, pic: Image.Image) -> str:
@@ -252,11 +252,13 @@ class Utils:
         message = f"以下是{title}：\n" + cq_image
         await send_group_msg_cq(event.group_id, message)
 
-    async def handle_open_case(self, event: GroupMessage, index: int):
+    async def handle_open_case(self, event: GroupMessage, index: int, amount: int = 20):
         """
         处理开箱逻辑
         :param event: 群消息事件
         :param index: 箱子序号
+        :param amount: 开箱数量
+        :return: (case_name, case_type, results) 或 (None, None, None)
         """
         weapon_cases = crates.get_case_name_list()
         skin_cases = crates.get_souvenir_name_list()
@@ -265,23 +267,36 @@ class Utils:
         # 检查序号是否有效
         if index < 1 or index > len(all_cases):
             await event.api.post_group_msg(event.group_id, text="无效的序号，请检查列表")
-            return
+            return None, None, None
 
         # 获取箱子名称
         crate_name = all_cases[index - 1]
         crate = crates.get_case_by_name(crate_name) or crates.get_souvenir_by_name(crate_name)
         if not crate:
             await event.api.post_group_msg(event.group_id, text="未找到对应的箱子")
-            return
+            return None, None, None
 
         # 获取用户名称
         user_name = event.sender.card or event.sender.nickname
 
+        # 确定箱子类型
+        case_type = "weapon" if crate_name in weapon_cases else "souvenir"
+
         # 开箱逻辑
-        items = crates.open_crate_multiple(crate, amount=20)  # 默认开20箱子
+        items = crates.open_crate_multiple(crate, amount=amount)
         opened_skins: List[SelectedSkin] = []
+        results = []
+
         for item in items:
-            opened_skins.append(skins.get_skins(item.name))
+            skin = skins.get_skins(item.name)
+            opened_skins.append(skin)
+
+            # 收集结果数据用于统计
+            results.append({
+                'name': skin.name,
+                'rarity': skin.rarity,
+                'wear': skin.wear
+            })
 
         # 合成图片
         image_bytes = await self.merge_images(opened_skins, crate.name, crate.image, user_name)
@@ -289,3 +304,6 @@ class Utils:
         # 发送图片
         cq_image = f"[CQ:image,file=base64://{base64.b64encode(image_bytes).decode('utf-8')}]"
         await send_group_msg_cq(event.group_id, cq_image)
+
+        # 返回开箱结果数据
+        return crate_name, case_type, results

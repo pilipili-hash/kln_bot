@@ -9,7 +9,7 @@ from ncatbot.core.element import (
 from .database import AnimeDB
 from .scheduler import AnimeScheduler
 import asyncio
-from utils.group_forward_msg import send_group_forward_msg_ws
+from utils.onebot_v11_handler import OneBotV11MessageHandler
 
 bot = CompatibleEnrollment
 
@@ -28,11 +28,14 @@ class TodayAnime(BasePlugin):
         # 初始化调度器
         self.scheduler = AnimeScheduler(self.api)
         
+        # 初始化OneBotV11消息处理器
+        self.message_handler = OneBotV11MessageHandler()
+        
         # 注册定时任务，每天9点推送番剧
         self.add_scheduled_task(
             job_func=self.daily_push,
             name="anime_daily_push",
-            interval="9:00",  # 每天9点执行
+            interval="21:30",  # 每天9点执行
             # args=(self.api.get,)  # 传入机器人ID作为参数
         )
     async def daily_push(self):
@@ -89,11 +92,18 @@ class TodayAnime(BasePlugin):
             if data:
                 formatted_data = self.scheduler.format_anime_data(data)
                 if formatted_data:
-                    messages = await self.scheduler.create_forward_messages(formatted_data, event.self_id)
-                    await send_group_forward_msg_ws(
-                        group_id=event.group_id,
-                        content=messages
-                    )
+                    messages = await self.scheduler.create_forward_messages(formatted_data, str(event.self_id))
+                    # 使用OneBotV11合并转发消息
+                    try:
+                        await self.message_handler.send_forward_message(
+                            group_id=event.group_id,
+                            messages=messages
+                        )
+                        # 不管返回值如何，都不发送额外的错误消息
+                        # 因为合并转发可能有延迟或特殊的响应格式
+                    except Exception as e:
+                        # 只有在真正异常时才发送错误消息
+                        await self.api.post_group_msg(event.group_id, text=f"发送今日番剧信息失败: {e}")
                 else:
                     await self.api.post_group_msg(event.group_id, text="今天没有番剧更新")
             else:
@@ -124,11 +134,13 @@ class TodayAnime(BasePlugin):
             if data:
                 formatted_data = self.scheduler.format_anime_data(data)
                 if formatted_data:
-                    messages = await self.scheduler.create_forward_messages(formatted_data, event.self_id)
-                    await send_group_forward_msg_ws(
-                        group_id=event.user_id,  # 私聊使用user_id
-                        content=messages
-                    )
+                    # 私聊不支持合并转发，改为发送文本摘要
+                    summary_text = "今日番剧更新:\n"
+                    for i, anime in enumerate(formatted_data[:5], 1):  # 只显示前5个
+                        summary_text += f"{i}. {anime['title']} - {anime['air_date']}\n"
+                    if len(formatted_data) > 5:
+                        summary_text += f"... 还有{len(formatted_data) - 5}个番剧更新"
+                    await self.api.post_private_msg(event.user_id, text=summary_text)
                 else:
                     await self.api.post_private_msg(event.user_id, text="今天没有番剧更新")
             else:

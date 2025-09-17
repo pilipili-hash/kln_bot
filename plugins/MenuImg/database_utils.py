@@ -32,16 +32,43 @@ async def load_menu_data(group_id, db_path="data.db"):
 
 
 async def update_menu_from_file(group_id):
-    """从 static/menu.json 文件读取菜单数据并与数据库中的数据合并"""
+    """从 static/menu.json 文件读取菜单数据并与数据库中的数据智能合并
+
+    返回格式：
+    {
+        "success": bool,
+        "error": str,  # 仅在失败时存在
+        "stats": {
+            "existing_count": int,
+            "new_count": int,
+            "merged_count": int,
+            "added_count": int,
+            "removed_count": int,
+            "kept_count": int,
+            "added_items": list,
+            "removed_items": list
+        }
+    }
+    """
     menu_file = os.path.join("static", "menu.json")
     if not os.path.exists(menu_file):
         _log.info(f"菜单文件 '{menu_file}' 不存在")
-        return False
+        return {
+            "success": False,
+            "error": f"菜单文件 '{menu_file}' 不存在"
+        }
 
     try:
         # 读取 menu.json 文件中的数据
         with open(menu_file, "r", encoding="utf-8") as file:
             new_menu_data = json.load(file)
+
+        # 验证新数据格式
+        if "info" not in new_menu_data or not isinstance(new_menu_data["info"], list):
+            return {
+                "success": False,
+                "error": "menu.json 格式错误：缺少 'info' 字段或 'info' 不是列表"
+            }
 
         # 从数据库中加载现有菜单数据
         db_path = "data.db"
@@ -51,14 +78,33 @@ async def update_menu_from_file(group_id):
             """, (group_id,)) as cursor:
                 result = await cursor.fetchone()
 
+            existing_menu_data = None
             if result:
                 # 将现有数据解析为 Python 对象
                 existing_menu_data = json.loads(result[0])
-                # 合并新数据和现有数据
-                merged_menu_data = merge_menu_data(existing_menu_data, new_menu_data)
+
+            # 记录合并前的统计信息
+            existing_count = len(existing_menu_data.get("info", [])) if existing_menu_data else 0
+            new_count = len(new_menu_data.get("info", []))
+
+            # 合并数据并获取详细统计
+            if existing_menu_data:
+                merged_result = merge_menu_data_with_stats(existing_menu_data, new_menu_data)
+                merged_menu_data = merged_result["data"]
+                stats = merged_result["stats"]
             else:
                 # 如果数据库中没有数据，直接使用新数据
                 merged_menu_data = new_menu_data
+                stats = {
+                    "existing_count": 0,
+                    "new_count": new_count,
+                    "merged_count": new_count,
+                    "added_count": new_count,
+                    "removed_count": 0,
+                    "kept_count": 0,
+                    "added_items": [item["title"] for item in new_menu_data["info"]],
+                    "removed_items": []
+                }
 
             # 将合并后的数据写回数据库
             await conn.execute("""
@@ -67,15 +113,41 @@ async def update_menu_from_file(group_id):
             """, (group_id, json.dumps(merged_menu_data, ensure_ascii=False)))
 
             await conn.commit()
+
         _log.info(f"群号 {group_id} 的菜单已更新并合并")
-        return True
+        return {
+            "success": True,
+            "stats": stats
+        }
+
     except FileNotFoundError:
-        _log.info(f"菜单文件 '{menu_file}' 未找到")
-    except json.JSONDecodeError:
-        _log.info(f"菜单文件 '{menu_file}' 格式错误")
+        error_msg = f"菜单文件 '{menu_file}' 未找到"
+        _log.info(error_msg)
+        return {
+            "success": False,
+            "error": error_msg
+        }
+    except json.JSONDecodeError as e:
+        error_msg = f"菜单文件 '{menu_file}' JSON格式错误: {str(e)}"
+        _log.info(error_msg)
+        return {
+            "success": False,
+            "error": error_msg
+        }
     except aiosqlite.Error as e:
-        _log.info(f"数据库操作失败: {e}")
-    return False
+        error_msg = f"数据库操作失败: {str(e)}"
+        _log.info(error_msg)
+        return {
+            "success": False,
+            "error": error_msg
+        }
+    except Exception as e:
+        error_msg = f"更新菜单时发生未知错误: {str(e)}"
+        _log.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg
+        }
 
 
 def extract_members(menu_data):
@@ -260,21 +332,413 @@ def truncate_text(text: str, font: ImageFont.ImageFont, max_width: int) -> str:
 
     return truncated_text + ellipsis
 
+def merge_menu_data_with_stats(existing_menu_data, new_menu_data):
+    """智能合并现有菜单数据和新菜单数据，并返回详细统计信息
+
+    返回格式：
+    {
+        "data": merged_menu_data,
+        "stats": {
+            "existing_count": int,
+            "new_count": int,
+            "merged_count": int,
+            "added_count": int,
+            "removed_count": int,
+            "kept_count": int,
+            "added_items": list,
+            "removed_items": list
+        }
+    }
+    """
+    if "info" not in existing_menu_data or "info" not in new_menu_data:
+        # 如果任一数据缺少info字段，直接返回新数据
+        new_count = len(new_menu_data.get("info", []))
+        return {
+            "data": new_menu_data,
+            "stats": {
+                "existing_count": 0,
+                "new_count": new_count,
+                "merged_count": new_count,
+                "added_count": new_count,
+                "removed_count": 0,
+                "kept_count": 0,
+                "added_items": [item["title"] for item in new_menu_data.get("info", [])],
+                "removed_items": []
+            }
+        }
+
+    existing_info = existing_menu_data["info"]
+    new_info = new_menu_data["info"]
+
+    # 统计信息
+    existing_count = len(existing_info)
+    new_count = len(new_info)
+
+    # 创建新数据的title集合，用于快速查找
+    new_titles = {item["title"] for item in new_info}
+
+    # 创建现有数据的title到item的映射
+    existing_items_map = {item["title"]: item for item in existing_info}
+
+    merged_info = []
+    added_items = []
+    kept_items = []
+
+    # 遍历新数据中的所有项目
+    for new_item in new_info:
+        title = new_item["title"]
+
+        if title in existing_items_map:
+            # 如果项目在原有数据中存在，保持原有的状态和内容
+            existing_item = existing_items_map[title]
+            merged_item = {
+                "title": title,
+                "status": existing_item.get("status", new_item.get("status", "0")),  # 保持原有状态
+                "content": existing_item.get("content", new_item.get("content", ""))  # 保持原有内容，如果没有则使用新内容
+            }
+            merged_info.append(merged_item)
+            kept_items.append(title)
+            _log.debug(f"保持现有项目: {title} (状态: {merged_item['status']})")
+        else:
+            # 如果是新项目，直接添加
+            merged_info.append(new_item)
+            added_items.append(title)
+            _log.info(f"添加新项目: {title} (状态: {new_item.get('status', '0')})")
+
+    # 记录被删除的项目
+    removed_items = []
+    for existing_item in existing_info:
+        if existing_item["title"] not in new_titles:
+            removed_items.append(existing_item["title"])
+
+    if removed_items:
+        _log.info(f"删除的项目: {', '.join(removed_items)}")
+
+    # 更新合并后的数据
+    result_data = existing_menu_data.copy()
+    result_data["info"] = merged_info
+
+    # 统计信息
+    merged_count = len(merged_info)
+    added_count = len(added_items)
+    removed_count = len(removed_items)
+    kept_count = len(kept_items)
+
+    _log.info(f"菜单合并完成: 原有{existing_count}项, 新数据{new_count}项, "
+              f"合并后{merged_count}项 (新增{added_count}项, 删除{removed_count}项, 保持{kept_count}项)")
+
+    return {
+        "data": result_data,
+        "stats": {
+            "existing_count": existing_count,
+            "new_count": new_count,
+            "merged_count": merged_count,
+            "added_count": added_count,
+            "removed_count": removed_count,
+            "kept_count": kept_count,
+            "added_items": added_items,
+            "removed_items": removed_items
+        }
+    }
+
 def merge_menu_data(existing_menu_data, new_menu_data):
-    """合并现有菜单数据和新菜单数据"""
-    if "info" in existing_menu_data and "info" in new_menu_data:
-        # 合并 info 列表
-        existing_info = existing_menu_data["info"]
-        new_info = new_menu_data["info"]
+    """智能合并现有菜单数据和新菜单数据
 
-        # 去重合并（假设以 title 为唯一标识）
-        merged_info = {item["title"]: item for item in existing_info}
-        for item in new_info:
-            merged_info[item["title"]] = item
+    合并策略：
+    1. 保持原有项目的状态和内容不变
+    2. 删除在新数据中不存在的项目
+    3. 添加新数据中的新项目
+    """
+    if "info" not in existing_menu_data or "info" not in new_menu_data:
+        # 如果任一数据缺少info字段，直接返回新数据
+        return new_menu_data
 
-        # 将合并后的数据转换回列表
-        existing_menu_data["info"] = list(merged_info.values())
+    existing_info = existing_menu_data["info"]
+    new_info = new_menu_data["info"]
 
-    # 如果有其他字段需要合并，可以在这里处理
-    return existing_menu_data
+    # 创建新数据的title集合，用于快速查找
+    new_titles = {item["title"] for item in new_info}
+
+    # 创建新数据的title到item的映射
+    new_items_map = {item["title"]: item for item in new_info}
+
+    # 创建现有数据的title到item的映射
+    existing_items_map = {item["title"]: item for item in existing_info}
+
+    merged_info = []
+
+    # 遍历新数据中的所有项目
+    for new_item in new_info:
+        title = new_item["title"]
+
+        if title in existing_items_map:
+            # 如果项目在原有数据中存在，保持原有的状态和内容
+            existing_item = existing_items_map[title]
+            merged_item = {
+                "title": title,
+                "status": existing_item.get("status", new_item.get("status", "0")),  # 保持原有状态
+                "content": existing_item.get("content", new_item.get("content", ""))  # 保持原有内容，如果没有则使用新内容
+            }
+            merged_info.append(merged_item)
+            _log.debug(f"保持现有项目: {title} (状态: {merged_item['status']})")
+        else:
+            # 如果是新项目，直接添加
+            merged_info.append(new_item)
+            _log.info(f"添加新项目: {title} (状态: {new_item.get('status', '0')})")
+
+    # 记录被删除的项目
+    removed_items = []
+    for existing_item in existing_info:
+        if existing_item["title"] not in new_titles:
+            removed_items.append(existing_item["title"])
+
+    if removed_items:
+        _log.info(f"删除的项目: {', '.join(removed_items)}")
+
+    # 更新合并后的数据
+    result_data = existing_menu_data.copy()
+    result_data["info"] = merged_info
+
+    # 记录合并统计
+    existing_count = len(existing_info)
+    new_count = len(new_info)
+    merged_count = len(merged_info)
+    added_count = len([item for item in new_info if item["title"] not in existing_items_map])
+    removed_count = len(removed_items)
+
+    _log.info(f"菜单合并完成: 原有{existing_count}项, 新数据{new_count}项, "
+              f"合并后{merged_count}项 (新增{added_count}项, 删除{removed_count}项)")
+
+    return result_data
+
+
+async def get_plugin_by_index(group_id, index):
+    """通过索引获取插件信息"""
+    try:
+        menu_data = await load_menu_data(group_id)
+        if not menu_data or "info" not in menu_data:
+            return None
+
+        info_list = menu_data["info"]
+        if 0 <= index < len(info_list):
+            return info_list[index]
+        return None
+    except Exception as e:
+        _log.error(f"通过索引获取插件信息失败: {e}")
+        return None
+
+
+async def get_plugin_by_name(group_id, name):
+    """通过名称获取插件信息"""
+    try:
+        menu_data = await load_menu_data(group_id)
+        if not menu_data or "info" not in menu_data:
+            return None
+
+        info_list = menu_data["info"]
+        for item in info_list:
+            if item.get("title", "") == name:
+                return item
+        return None
+    except Exception as e:
+        _log.error(f"通过名称获取插件信息失败: {e}")
+        return None
+
+
+async def toggle_plugin_status(group_id, plugin_name, new_status):
+    """切换插件状态"""
+    try:
+        menu_data = await load_menu_data(group_id)
+        if not menu_data or "info" not in menu_data:
+            return False
+
+        info_list = menu_data["info"]
+        updated = False
+
+        for item in info_list:
+            if item.get("title", "") == plugin_name:
+                item["status"] = new_status
+                updated = True
+                break
+
+        if updated:
+            # 保存更新后的数据到数据库
+            async with aiosqlite.connect("data.db") as conn:
+                await conn.execute("""
+                INSERT OR REPLACE INTO group_menus (group_id, menu_item)
+                VALUES (?, ?)
+                """, (group_id, json.dumps(menu_data, ensure_ascii=False)))
+                await conn.commit()
+
+            _log.info(f"群 {group_id} 的插件 {plugin_name} 状态已更新为 {new_status}")
+            return True
+
+        return False
+    except Exception as e:
+        _log.error(f"切换插件状态失败: {e}")
+        return False
+
+
+# 详细帮助信息字典
+PLUGIN_HELP_CONTENT = {
+    "智能聊天": """🤖 智能聊天功能
+
+📋 基本使用：
+• @机器人 [消息] - AI智能回复
+• 机器人 [消息] - 直接对话
+• 发送图片 - 自动分析图片内容
+• /分析图片 - 专门的图片分析功能
+
+🔧 管理命令：
+• /修改设定 [设定内容] - 修改AI角色设定
+• /查看设定 - 查看当前设定
+• /清空上下文 - 清空对话历史
+
+🌐 联网功能：
+• 机器人 联网 [问题] - 联网搜索回答
+
+💡 特色功能：
+• 支持多模态对话（文字+图片）
+• 智能上下文记忆
+• 可自定义AI角色设定""",
+
+    "搜图": """🔍 图片搜索功能
+
+📋 基本使用：
+• /搜图 [图片] - 综合搜图
+• 发送 /搜图 然后发送图片 - 等待模式搜图
+
+🌐 搜索引擎：
+• Google图片搜索 - 通用图片搜索
+• SauceNAO - 二次元图片搜索
+• IQDB - 动漫图片数据库
+• ASCII2D - 备用搜索引擎
+
+📊 搜索结果：
+• 相似度百分比
+• 原图链接
+• 来源信息
+• 缩略图预览""",
+
+    "签到": """✅ 签到功能
+
+📋 基本使用：
+• 发送 签到 - 每日签到
+• /查询 - 查看酥酥数量
+• /签到排行 - 查看排行榜
+
+🎁 奖励系统：
+• 每日签到获得随机酥酥
+• 连续签到有额外奖励
+• 特殊日期双倍奖励
+
+👑 管理命令：
+• /增加 [数量] @用户 - 增加酥酥
+• /减少 [数量] @用户 - 减少酥酥
+• 添加彩蛋文本 - 自定义签到图片文字""",
+
+    "点歌": """🎵 点歌功能
+
+📋 基本使用：
+• 点歌 [歌名] - 网易云音乐点歌
+• QQ点歌 [歌名] - QQ音乐点歌
+
+🎼 支持平台：
+• 网易云音乐（默认）
+• QQ音乐
+• 酷狗音乐
+• 酷我音乐
+
+📊 搜索功能：
+• 歌曲名搜索
+• 歌手名搜索
+• 专辑搜索""",
+
+    "以图搜番": """🎬 以图搜番功能
+
+📋 基本使用：
+• /搜番 [图片] - 通过截图搜索番剧
+• 以图搜番 [图片] - 识别动画截图
+
+📊 搜索信息：
+• 番剧名称和集数
+• 时间戳信息
+• 相似度百分比
+• 番剧详细信息
+
+💡 使用技巧：
+• 需要清晰的动画截图
+• 避免有字幕遮挡的图片
+• 支持大部分主流动画""",
+
+    "今日番剧": """📺 今日番剧功能
+
+📋 基本使用：
+• 今日番剧 - 查看今天更新的番剧
+• 开启番剧推送 - 开启自动推送
+• 关闭番剧推送 - 关闭自动推送
+
+⏰ 推送设置：
+• 每天上午9点自动推送
+• 显示当日更新番剧列表
+• 包含播出时间信息
+
+📊 番剧信息：
+• 番剧名称和集数
+• 播出时间
+• 更新状态""",
+
+    "喜加一": """🎮 喜加一功能
+
+📋 基本使用：
+• 今日喜加一 - 查看Epic免费游戏
+• 开启喜加一推送 - 开启自动推送
+• 关闭喜加一推送 - 关闭自动推送
+
+🎁 游戏信息：
+• 免费游戏名称
+• 游戏简介和截图
+• 免费时间期限
+• 领取链接
+
+⏰ 推送设置：
+• 每天上午9点自动推送
+• 新游戏上架及时通知""",
+
+    "帮你bing": """🔍 Bing搜索功能
+
+📋 基本使用：
+• /bing [搜索内容] - Bing搜索
+• 帮你bing [内容] - 搜索并返回结果
+
+🌐 搜索功能：
+• 网页搜索
+• 图片搜索
+• 新闻搜索
+
+📊 搜索结果：
+• 相关网页链接
+• 搜索结果摘要
+• 相关建议""",
+
+    "setu": """🔞 随机图片功能
+
+📋 使用方法：
+• 涩图 [数量] - 获取随机图片（最大20张）
+
+⚠️ 注意事项：
+• 仅管理员可用
+• 请合理使用
+• 注意群规和法律法规
+
+💡 提示：
+• 数量范围：1-20张
+• 图片质量随机
+• 内容分级管理"""
+}
+
+
+async def get_plugin_help_content(plugin_name):
+    """获取插件的详细帮助内容"""
+    return PLUGIN_HELP_CONTENT.get(plugin_name, None)
 

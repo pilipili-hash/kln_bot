@@ -1,14 +1,64 @@
-gemini_apikey: ""
+# NCatBot 新版配置文件
+# 基本配置               # 管理员 QQ 号（请修改为你的QQ号）
+bt_uin: '987654321'                 # 机器人 QQ 号（请修改为机器人QQ号）
+enable_webui_interaction: false     # 启用 WebUI 交互式登录/引导
+check_ncatbot_update: true          # 启动时检查 NcatBot 更新
+skip_ncatbot_install_check: false
+debug: false                        # 调试模式（打印更多堆栈/日志）
 
-proxy: "http://127.0.0.1:1100" 
+# NapCat 配置
+napcat:
+  ws_uri: ws://localhost:3001       # NapCat WebSocket 服务地址
+  webui_uri: http://localhost:6099  # NapCat WebUI 地址
+  webui_token: napcat               # WebUI 令牌
+  ws_token: ''                      # WebSocket 令牌
+  ws_listen_ip: localhost           # WS 监听 IP（安全校验相关）
+  remote_mode: false                # 远程模式（不在本机运行 NapCat）
+  check_napcat_update: false
+  stop_napcat: false
+  report_self_message: false
+  report_forward_message_detail: true # 上报解析合并转发消息
 
-bot_name: "小黑"
+# 插件配置
+plugin:
+  plugins_dir: plugins              # 插件目录
+  skip_plugin_load: false           # 跳过外部插件加载（仅加载内置插件）
 
-master: [4123213]
+# 自定义配置（兼容旧版插件）
+bot_name: "NcatBot"
 
-saucenao_api_key: ""
+master:
+  - 123456789  # 请修改为你的QQ号
+  # - 987654321  # 可以添加更多管理员
 
-pixiv_refresh_token: ""
+# API 密钥配置（请根据需要填写，不使用可留空）
+gemini_apikey: ""  # Gemini AI API 密钥
+saucenao_api_key: ""  # SauceNao 图片搜索 API 密钥
+pixiv_refresh_token: ""  # Pixiv 刷新令牌
+google_cookie: ""  # Google搜图Cookie，用于提高搜索质量和避免限制
 
+# 服务配置
 VITS_url: "https://siyangyuan-vitshonkai.hf.space"
+chaofen_url: "https://siyangyuan-animecf.hf.space"
 
+# 代理配置（可选）
+proxy: "http://127.0.0.1:1100"
+
+# AI绘图插件配置
+ai_drawing:
+  api_key: ""  # AI绘图API密钥
+  api_url: "https://sd.exacg.cc/api/v1/generate_image"
+  random_tag_url: "https://sd.exacg.cc/random_tag"
+  translate_api_url: "https://deepl.borber.top/translate"
+  default_width: 512
+  default_height: 768
+  default_steps: 20
+  default_cfg: 7.0
+  max_retries: 3
+  timeout: 120
+
+# 数据库配置
+database:
+  path: "data.db"
+  backup_enabled: true
+  backup_interval: 3600
