@@ -18,7 +18,7 @@
 **Windows 用户：**
 ```bash
 # 完整安装（首次使用）
-start_bot.bat
+install.bat
 
 # 快速启动（已配置环境）
 run.bat
@@ -47,17 +47,13 @@ chmod +x start_bot.sh run.sh
    ```bash
    # 使用 pip
    pip install -r requirements.txt
-
-   # 或使用 poetry（推荐）
-   pip install poetry
-   poetry install
    ```
-
+   
 3. **配置机器人**
    ```bash
    # 复制配置模板
    cp config.example.yaml config.yaml
-
+   
    # 编辑配置文件
    nano config.yaml  # 或使用其他编辑器
    ```
@@ -169,7 +165,7 @@ NcatBot/
    ```bash
    # 升级 pip
    python -m pip install --upgrade pip
-
+   
    # 使用国内镜像
    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
    ```

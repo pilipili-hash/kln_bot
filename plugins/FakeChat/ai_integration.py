@@ -53,7 +53,24 @@ class AIIntegration:
         try:
             with open(config_path, "r", encoding="utf-8") as file:
                 config = yaml.safe_load(file)
-                api_key = config.get("gemini_apikey", "")
+                
+                # 处理API key配置，支持单个字符串或列表
+                api_key_config = config.get("gemini_apikey", "")
+                if isinstance(api_key_config, list):
+                    # 过滤掉空值和注释
+                    api_keys = [key.strip() for key in api_key_config if key and isinstance(key, str) and key.strip() and not key.strip().startswith('#')]
+                    api_key = api_keys[0] if api_keys else ""  # 默认使用第一个可用的key
+                    self.all_api_keys = api_keys  # 保存所有可用的key
+                    self.current_key_index = 0  # 当前使用的key索引
+                elif isinstance(api_key_config, str):
+                    api_key = api_key_config
+                    self.all_api_keys = [api_key] if api_key else []
+                    self.current_key_index = 0
+                else:
+                    api_key = ""
+                    self.all_api_keys = []
+                    self.current_key_index = 0
+                
                 proxy = config.get("proxy", None)
                 bot_name = config.get("bot_name", "可琳雫")
                 return api_key, proxy, bot_name
@@ -62,6 +79,30 @@ class AIIntegration:
         except Exception as e:
             _log.error(f"加载配置文件时出错: {e}")
         return "", None, "机器人"
+    
+    def get_next_api_key(self):
+        """
+        获取下一个可用的API key
+        用于在当前key失败时切换到下一个
+        """
+        if not hasattr(self, 'all_api_keys') or not self.all_api_keys:
+            return None
+            
+        # 切换到下一个key
+        self.current_key_index = (self.current_key_index + 1) % len(self.all_api_keys)
+        next_key = self.all_api_keys[self.current_key_index]
+        
+        _log.info(f"切换到API key索引: {self.current_key_index}")
+        return next_key
+
+    def reset_to_first_api_key(self):
+        """
+        重置到第一个API key
+        """
+        if hasattr(self, 'all_api_keys') and self.all_api_keys:
+            self.current_key_index = 0
+            self.api_key = self.all_api_keys[0]
+            _log.info("重置到第一个API key")
     
     async def initialize(self, api):
         """初始化AI集成"""
@@ -113,52 +154,125 @@ class AIIntegration:
         return self._generate_preset_response(message)
 
     async def _call_gemini_api(self, prompt: str) -> str:
-        """调用Gemini API"""
-        try:
-            url = "https://gemn.ariaxz.tk/v1/chat/completions"
+        """调用Gemini API，支持多个API key自动切换"""
+        url = "https://gemn.ariaxz.tk/v1/chat/completions"
+
+        messages = [
+            {"role": "system", "content": "你是一个活泼的群友，要自然地参与群聊。"},
+            {"role": "user", "content": prompt}
+        ]
+
+        payload = {
+            "model": "gemini-2.0-flash-exp",
+            "messages": messages,
+            "max_tokens": 150,
+            "temperature": 0.8
+        }
+
+        timeout = httpx.Timeout(30.0)
+        connector_kwargs = {}
+        if self.proxy:
+            connector_kwargs["proxy"] = self.proxy
+
+        # 尝试使用所有可用的API key
+        max_retries = len(self.all_api_keys) if hasattr(self, 'all_api_keys') and self.all_api_keys else 1
+        
+        for attempt in range(max_retries):
+            current_api_key = self.api_key
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
+                "Authorization": f"Bearer {current_api_key}"
             }
+            
+            _log.info(f"FakeChat尝试使用API key (索引: {getattr(self, 'current_key_index', 0)}, 尝试: {attempt + 1}/{max_retries})")
 
-            messages = [
-                {"role": "system", "content": "你是一个活泼的群友，要自然地参与群聊。"},
-                {"role": "user", "content": prompt}
-            ]
+            try:
+                async with httpx.AsyncClient(timeout=timeout, **connector_kwargs) as client:
+                    response = await client.post(url, headers=headers, json=payload)
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        if "choices" in result and len(result["choices"]) > 0:
+                            content = result["choices"][0]["message"]["content"]
+                            
+                            # 成功时重置到第一个API key
+                            if attempt > 0:
+                                self.reset_to_first_api_key()
+                            
+                            return content.strip()
+                        else:
+                            _log.error(f"Gemini API返回格式异常: {result}")
+                            # 如果这是最后一次尝试，返回空
+                            if attempt == max_retries - 1:
+                                return ""
+                            else:
+                                # 切换到下一个API key继续尝试
+                                next_key = self.get_next_api_key()
+                                if next_key:
+                                    self.api_key = next_key
+                                    _log.info(f"返回格式异常，切换到下一个API key")
+                                    continue
+                                else:
+                                    return ""
+                    
+                    elif response.status_code == 401:
+                        _log.error(f"FakeChat API密钥无效 (401)")
+                        # API key无效，尝试下一个
+                        if attempt < max_retries - 1:
+                            next_key = self.get_next_api_key()
+                            if next_key:
+                                self.api_key = next_key
+                                _log.info(f"API密钥无效，切换到下一个API key")
+                                continue
+                        return ""
+                    
+                    elif response.status_code == 429:
+                        _log.error(f"FakeChat API请求频率限制 (429)")
+                        # 频率限制，尝试下一个API key
+                        if attempt < max_retries - 1:
+                            next_key = self.get_next_api_key()
+                            if next_key:
+                                self.api_key = next_key
+                                _log.info(f"请求频率限制，切换到下一个API key")
+                                continue
+                        return ""
+                    
+                    else:
+                        _log.error(f"FakeChat Gemini API HTTP错误: {response.status_code}")
+                        # 其他HTTP错误，尝试下一个API key
+                        if attempt < max_retries - 1:
+                            next_key = self.get_next_api_key()
+                            if next_key:
+                                self.api_key = next_key
+                                _log.info(f"HTTP错误 ({response.status_code})，切换到下一个API key")
+                                continue
+                        return ""
 
-            payload = {
-                "model": "gemini-2.0-flash-exp",
-                "messages": messages,
-                "max_tokens": 150,
-                "temperature": 0.8
-            }
-
-            timeout = httpx.Timeout(30.0)
-            connector_kwargs = {}
-            if self.proxy:
-                connector_kwargs["proxy"] = self.proxy
-
-            async with httpx.AsyncClient(timeout=timeout, **connector_kwargs) as client:
-                response = await client.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-
-                result = response.json()
-                if "choices" in result and len(result["choices"]) > 0:
-                    content = result["choices"][0]["message"]["content"]
-                    return content.strip()
-                else:
-                    _log.error(f"Gemini API返回格式异常: {result}")
-                    return ""
-
-        except httpx.TimeoutException:
-            _log.error("Gemini API调用超时")
-            return ""
-        except httpx.HTTPStatusError as e:
-            _log.error(f"Gemini API HTTP错误: {e.response.status_code}")
-            return ""
-        except Exception as e:
-            _log.error(f"调用Gemini API失败: {e}")
-            return ""
+            except httpx.TimeoutException:
+                _log.error("FakeChat Gemini API调用超时")
+                # 超时，尝试下一个API key
+                if attempt < max_retries - 1:
+                    next_key = self.get_next_api_key()
+                    if next_key:
+                        self.api_key = next_key
+                        _log.info(f"API调用超时，切换到下一个API key")
+                        continue
+                return ""
+            
+            except Exception as e:
+                _log.error(f"FakeChat 调用Gemini API失败: {e}")
+                # 其他异常，尝试下一个API key
+                if attempt < max_retries - 1:
+                    next_key = self.get_next_api_key()
+                    if next_key:
+                        self.api_key = next_key
+                        _log.info(f"API调用异常，切换到下一个API key")
+                        continue
+                return ""
+        
+        # 如果所有API key都尝试失败了
+        _log.error("FakeChat 所有API密钥都不可用")
+        return ""
 
     async def _get_chat_history(self, group_id: int, api, limit: int = 5) -> List[Dict[str, Any]]:
         """获取群聊历史记录"""
@@ -418,52 +532,111 @@ class AIIntegration:
             return "其他:表情图片"
 
     async def _call_gemini_api_with_image(self, prompt: str, image_url: str) -> str:
-        """调用Gemini API进行图片分析"""
-        try:
-            url = "https://gemn.ariaxz.tk/v1/chat/completions"
+        """调用Gemini API进行图片分析，支持多个API key自动切换"""
+        url = "https://gemn.ariaxz.tk/v1/chat/completions"
+
+        # 构建包含图片的消息
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_url
+                        }
+                    }
+                ]
+            }
+        ]
+
+        payload = {
+            "model": "gemini-2.0-flash-exp",
+            "messages": messages,
+            "max_tokens": 100,
+            "temperature": 0.7
+        }
+
+        timeout = httpx.Timeout(30.0)
+        
+        # 尝试使用所有可用的API key
+        max_retries = len(self.all_api_keys) if hasattr(self, 'all_api_keys') and self.all_api_keys else 1
+        
+        for attempt in range(max_retries):
+            current_api_key = self.api_key
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
+                "Authorization": f"Bearer {current_api_key}"
             }
+            
+            _log.info(f"FakeChat图片分析尝试使用API key (索引: {getattr(self, 'current_key_index', 0)}, 尝试: {attempt + 1}/{max_retries})")
 
-            # 构建包含图片的消息
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": image_url
-                            }
-                        }
-                    ]
-                }
-            ]
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    response = await client.post(url, headers=headers, json=payload)
 
-            payload = {
-                "model": "gemini-2.0-flash-exp",
-                "messages": messages,
-                "max_tokens": 100,
-                "temperature": 0.7
-            }
+                    if response.status_code == 200:
+                        result = response.json()
+                        if 'choices' in result and len(result['choices']) > 0:
+                            content = result['choices'][0]['message']['content']
+                            
+                            # 成功时重置到第一个API key
+                            if attempt > 0:
+                                self.reset_to_first_api_key()
+                            
+                            return content.strip()
+                    
+                    elif response.status_code == 401:
+                        _log.error(f"FakeChat图片分析API密钥无效 (401)")
+                        # API key无效，尝试下一个
+                        if attempt < max_retries - 1:
+                            next_key = self.get_next_api_key()
+                            if next_key:
+                                self.api_key = next_key
+                                _log.info(f"API密钥无效，切换到下一个API key")
+                                continue
+                        return ""
+                    
+                    elif response.status_code == 429:
+                        _log.error(f"FakeChat图片分析API请求频率限制 (429)")
+                        # 频率限制，尝试下一个API key
+                        if attempt < max_retries - 1:
+                            next_key = self.get_next_api_key()
+                            if next_key:
+                                self.api_key = next_key
+                                _log.info(f"请求频率限制，切换到下一个API key")
+                                continue
+                        return ""
+                    
+                    else:
+                        _log.error(f"FakeChat图片分析HTTP错误: {response.status_code}")
+                        # 其他HTTP错误，尝试下一个API key
+                        if attempt < max_retries - 1:
+                            next_key = self.get_next_api_key()
+                            if next_key:
+                                self.api_key = next_key
+                                _log.info(f"HTTP错误 ({response.status_code})，切换到下一个API key")
+                                continue
+                        return ""
 
-            timeout = httpx.Timeout(30.0)
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(url, headers=headers, json=payload)
-
-                if response.status_code == 200:
-                    result = response.json()
-                    if 'choices' in result and len(result['choices']) > 0:
-                        content = result['choices'][0]['message']['content']
-                        return content.strip()
-
-        except Exception as e:
-            _log.warning(f"Gemini图片分析失败: {e}")
+            except Exception as e:
+                _log.warning(f"FakeChat Gemini图片分析失败: {e}")
+                # 异常，尝试下一个API key
+                if attempt < max_retries - 1:
+                    next_key = self.get_next_api_key()
+                    if next_key:
+                        self.api_key = next_key
+                        _log.info(f"图片分析异常，切换到下一个API key")
+                        continue
+                return ""
+        
+        # 如果所有API key都尝试失败了
+        _log.error("FakeChat图片分析所有API密钥都不可用")
+        return ""
 
         # 如果图片分析失败，使用基于URL的简单分析
         _log.info("图片分析失败，使用URL特征分析")

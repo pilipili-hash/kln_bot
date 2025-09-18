@@ -32,7 +32,10 @@ master:
   # - 987654321  # 可以添加更多管理员
 
 # API 密钥配置（请根据需要填写，不使用可留空）
-gemini_apikey: ""  # Gemini AI API 密钥
+gemini_apikey:
+  - ""
+  #- ""  # 备用 API Key
+  # - "YOUR_BACKUP_API_KEY_2"  # 备用 API Key
 saucenao_api_key: ""  # SauceNao 图片搜索 API 密钥
 pixiv_refresh_token: ""  # Pixiv 刷新令牌
 google_cookie: ""  # Google搜图Cookie，用于提高搜索质量和避免限制

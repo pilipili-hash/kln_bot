@@ -39,7 +39,23 @@ class OpenAIContextManager:
         try:
             with open(config_path, "r", encoding="utf-8") as file:
                 config = yaml.safe_load(file)
-                api_key = config.get("gemini_apikey", "")
+                
+                # 处理API key配置，支持单个字符串或列表
+                api_key_config = config.get("gemini_apikey", "")
+                if isinstance(api_key_config, list):
+                    # 过滤掉空值和注释
+                    api_keys = [key.strip() for key in api_key_config if key and isinstance(key, str) and key.strip() and not key.strip().startswith('#')]
+                    api_key = api_keys[0] if api_keys else ""  # 默认使用第一个可用的key
+                    self.all_api_keys = api_keys  # 保存所有可用的key
+                    self.current_key_index = 0  # 当前使用的key索引
+                elif isinstance(api_key_config, str):
+                    api_key = api_key_config
+                    self.all_api_keys = [api_key] if api_key else []
+                    self.current_key_index = 0
+                else:
+                    api_key = ""
+                    self.all_api_keys = []
+                    self.current_key_index = 0
                 proxy = config.get("proxy", None)
                 bot_name = config.get("bot_name", "可琳雫")  # 默认值为“机器人”
                 return api_key, proxy, bot_name
@@ -48,6 +64,30 @@ class OpenAIContextManager:
         except Exception as e:
             _log.error(f"加载配置文件时出错: {e}")
         return "", None, "机器人"
+
+    def get_next_api_key(self):
+        """
+        获取下一个可用的API key
+        用于在当前key失败时切换到下一个
+        """
+        if not hasattr(self, 'all_api_keys') or not self.all_api_keys:
+            return None
+            
+        # 切换到下一个key
+        self.current_key_index = (self.current_key_index + 1) % len(self.all_api_keys)
+        next_key = self.all_api_keys[self.current_key_index]
+        
+        _log.info(f"切换到API key索引: {self.current_key_index}")
+        return next_key
+
+    def reset_to_first_api_key(self):
+        """
+        重置到第一个API key
+        """
+        if hasattr(self, 'all_api_keys') and self.all_api_keys:
+            self.current_key_index = 0
+            self.api_key = self.all_api_keys[0]
+            _log.info("重置到第一个API key")
 
     async def get_context(self, group_id):
         """
@@ -237,10 +277,6 @@ class OpenAIContextManager:
         model_name = "gemini-2.0-flash:search" if use_search_model else "gemini-2.0-flash-exp"
 
         url = "https://gemn.ariaxz.tk/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
 
         # 构建请求载荷
         payload = {
@@ -261,68 +297,135 @@ class OpenAIContextManager:
                 content_preview = str(msg.get('content', ''))[:100]
                 _log.info(f"消息 {i} ({msg['role']}): {content_preview}...")
 
-        async with aiohttp.ClientSession() as session:
-            try:
-                _log.info(f"发送API请求到: {url}")
-                async with session.post(url, headers=headers, json=payload, proxy=self.proxy) as resp:
-                    response_text = await resp.text()
-                    _log.info(f"API响应状态码: {resp.status}")
+        # 尝试使用所有可用的API key
+        max_retries = len(self.all_api_keys) if hasattr(self, 'all_api_keys') and self.all_api_keys else 1
+        for attempt in range(max_retries):
+            current_api_key = self.api_key
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {current_api_key}"
+            }
+            
+            _log.info(f"尝试使用API key (索引: {getattr(self, 'current_key_index', 0)}, 尝试: {attempt + 1}/{max_retries})")
 
-                    if resp.status == 200:
-                        try:
-                            data = await resp.json()
-                            reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            async with aiohttp.ClientSession() as session:
+                try:
+                    _log.info(f"发送API请求到: {url}")
+                    async with session.post(url, headers=headers, json=payload, proxy=self.proxy) as resp:
+                        response_text = await resp.text()
+                        _log.info(f"API响应状态码: {resp.status}")
 
-                            if not reply:
-                                _log.warning("API返回空回复")
-                                return "抱歉，AI没有返回有效回复。"
+                        if resp.status == 200:
+                            try:
+                                data = await resp.json()
+                                reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
-                            # 构建上下文记录
-                            context_prompt = prompt if prompt else "[图片分析]"
-                            if image_urls:
-                                valid_count = len([url for url in image_urls if url.startswith('http')])
-                                context_prompt += f" [包含{valid_count}张图片]"
+                                if not reply:
+                                    _log.warning("API返回空回复")
+                                    return "抱歉，AI没有返回有效回复。"
 
-                            # 更新上下文，保持正确的格式
-                            new_context = context + (f"\nUser: {context_prompt}\nAssistant: {reply}" if context else f"User: {context_prompt}\nAssistant: {reply}")
+                                # 构建上下文记录
+                                context_prompt = prompt if prompt else "[图片分析]"
+                                if image_urls:
+                                    valid_count = len([url for url in image_urls if url.startswith('http')])
+                                    context_prompt += f" [包含{valid_count}张图片]"
 
-                            # 如果上下文太长，可以考虑截取最近的几轮对话
-                            if len(new_context) > 4000:  # 设置一个合理的长度限制
-                                parts = new_context.split('\nUser: ')
-                                if len(parts) > 3:  # 保留最近的几轮对话
-                                    new_context = 'User: ' + '\nUser: '.join(parts[-3:])
+                                # 更新上下文，保持正确的格式
+                                new_context = context + (f"\nUser: {context_prompt}\nAssistant: {reply}" if context else f"User: {context_prompt}\nAssistant: {reply}")
 
-                            await self.save_context(group_id, new_context)
-                            _log.info(f"AI回复成功，长度: {len(reply)}")
-                            return reply
+                                # 如果上下文太长，可以考虑截取最近的几轮对话
+                                if len(new_context) > 4000:  # 设置一个合理的长度限制
+                                    parts = new_context.split('\nUser: ')
+                                    if len(parts) > 3:  # 保留最近的几轮对话
+                                        new_context = 'User: ' + '\nUser: '.join(parts[-3:])
 
-                        except Exception as json_error:
-                            _log.error(f"解析API响应JSON失败: {json_error}")
-                            _log.error(f"原始响应: {response_text[:500]}...")
-                            return "抱歉，解析AI回复时出现错误。"
+                                await self.save_context(group_id, new_context)
+                                _log.info(f"AI回复成功，长度: {len(reply)}")
+                                
+                                # 成功时重置到第一个API key
+                                if attempt > 0:
+                                    self.reset_to_first_api_key()
+                                
+                                return reply
 
-                    elif resp.status == 400:
-                        _log.error(f"API请求参数错误 (400): {response_text}")
-                        # 尝试解析错误信息
-                        try:
-                            error_data = await resp.json()
-                            error_msg = error_data.get("error", {}).get("message", "未知错误")
-                            _log.error(f"详细错误信息: {error_msg}")
+                            except Exception as json_error:
+                                _log.error(f"解析API响应JSON失败: {json_error}")
+                                _log.error(f"原始响应: {response_text[:500]}...")
+                                # 如果这是最后一次尝试，返回错误
+                                if attempt == max_retries - 1:
+                                    return "抱歉，解析AI回复时出现错误。"
+                                else:
+                                    # 切换到下一个API key继续尝试
+                                    next_key = self.get_next_api_key()
+                                    if next_key:
+                                        self.api_key = next_key
+                                        _log.info(f"JSON解析失败，切换到下一个API key继续尝试")
+                                        continue
+                                    else:
+                                        return "抱歉，解析AI回复时出现错误。"
 
-                            # 如果是图片相关错误，提供更友好的提示
-                            if "image" in error_msg.lower() or "multimodal" in error_msg.lower():
-                                return "抱歉，图片分析功能暂时不可用，请稍后再试或发送纯文本消息。"
-                            else:
-                                return f"抱歉，请求格式有误：{error_msg}"
-                        except:
-                            return "抱歉，请求参数有误，请检查输入内容。"
+                        elif resp.status == 401:
+                            _log.error(f"API密钥无效 (401): {response_text}")
+                            # API key无效，尝试下一个
+                            if attempt < max_retries - 1:
+                                next_key = self.get_next_api_key()
+                                if next_key:
+                                    self.api_key = next_key
+                                    _log.info(f"API密钥无效，切换到下一个API key")
+                                    continue
+                            return "抱歉，API密钥无效，请检查配置。"
 
-                    else:
-                        _log.error(f"API请求失败，状态码: {resp.status}, 响应: {response_text[:500]}...")
-                        return f"抱歉，服务暂时不可用（错误码：{resp.status}）。"
+                        elif resp.status == 429:
+                            _log.error(f"API请求频率限制 (429): {response_text}")
+                            # 频率限制，尝试下一个API key
+                            if attempt < max_retries - 1:
+                                next_key = self.get_next_api_key()
+                                if next_key:
+                                    self.api_key = next_key
+                                    _log.info(f"请求频率限制，切换到下一个API key")
+                                    continue
+                            return "抱歉，请求过于频繁，请稍后再试。"
 
-            except Exception as e:
-                _log.error(f"请求API时发生异常: {e}")
-                import traceback
-                _log.error(f"异常详情: {traceback.format_exc()}")
-                return "抱歉，网络连接出现问题，请稍后再试。"
+                        elif resp.status == 400:
+                            _log.error(f"API请求参数错误 (400): {response_text}")
+                            # 尝试解析错误信息
+                            try:
+                                error_data = await resp.json()
+                                error_msg = error_data.get("error", {}).get("message", "未知错误")
+                                _log.error(f"详细错误信息: {error_msg}")
+
+                                # 如果是图片相关错误，提供更友好的提示
+                                if "image" in error_msg.lower() or "multimodal" in error_msg.lower():
+                                    return "抱歉，图片分析功能暂时不可用，请稍后再试或发送纯文本消息。"
+                                else:
+                                    return f"抱歉，请求格式有误：{error_msg}"
+                            except:
+                                return "抱歉，请求参数有误，请检查输入内容。"
+
+                        else:
+                            _log.error(f"API请求失败，状态码: {resp.status}, 响应: {response_text[:500]}...")
+                            # 其他错误，尝试下一个API key
+                            if attempt < max_retries - 1:
+                                next_key = self.get_next_api_key()
+                                if next_key:
+                                    self.api_key = next_key
+                                    _log.info(f"API请求失败 (状态码: {resp.status})，切换到下一个API key")
+                                    continue
+                            return f"抱歉，服务暂时不可用（错误码：{resp.status}）。"
+
+                except Exception as e:
+                    _log.error(f"请求API时发生异常: {e}")
+                    import traceback
+                    _log.error(f"异常详情: {traceback.format_exc()}")
+                    
+                    # 网络异常，尝试下一个API key
+                    if attempt < max_retries - 1:
+                        next_key = self.get_next_api_key()
+                        if next_key:
+                            self.api_key = next_key
+                            _log.info(f"网络异常，切换到下一个API key")
+                            continue
+                    return "抱歉，网络连接出现问题，请稍后再试。"
+        
+        # 如果所有API key都尝试失败了
+        return "抱歉，所有API密钥都不可用，请检查配置或稍后再试。"

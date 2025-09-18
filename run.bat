@@ -1,20 +1,20 @@
 @echo off
-:: 快速启动脚本 - 适用于已配置好环境的用户
-title NcatBot 快速启动
+:: Quick start script - for users with configured environment
+title NcatBot Quick Start
 chcp 65001 >nul
 
-echo 启动 NcatBot...
+echo Starting NcatBot...
 
-:: 激活虚拟环境（如果存在）
+:: Activate virtual environment if exists
 if exist "venv\Scripts\activate.bat" call venv\Scripts\activate.bat
 if exist ".venv\Scripts\activate.bat" call .venv\Scripts\activate.bat
 
-:: 创建必要目录
+:: Create necessary directories
 if not exist "data" mkdir data
 if not exist "logs" mkdir logs
 if not exist "static" mkdir static
 
-:: 启动机器人
+:: Start bot
 python main.py
 
 pause
